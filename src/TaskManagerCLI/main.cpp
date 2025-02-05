@@ -3,19 +3,26 @@
 //
 
 #include "taskpch.h"
-#include "Tasks.h"
 #include "Manager.h"
 
-void GetInput(std::string& input, std::vector<std::string>& output);
+/*
+ * GetInput(std::string& input, std::vector<std::string>& output)
+ * ------------------------------------------------------------------------------
+ * Parses user input, splitting it into separate words.
+ * - Words inside **double quotes ("...")** are treated as a **single argument**
+ *   regardless of spaces within them.
+ * - Extra spaces between words are ignored.
+ */
+void GetInput(const std::string &input, std::vector<std::string> &output);
 
-int main(int argc, char *argv[])
+int main(const int argc, const char *argv[])
 {
-    /* Entry Point of The Program */
+    /* Entry Point - Initializes Task Manager and Processes User Commands */
 
-    auto manager = std::make_unique<Manager>();
+    // TODO: Change the "./Documents/dev/project-portfolio/src/TaskManagerCLI/tasks.sh" with an appropriate name "tasks"
+    if (argc == 1 || (argc > 1 && static_cast<std::string>(argv[0]) == "tasks")) {
+        Manager manager;
 
-    // TODO: Change the "tasks" to the appropriate name
-    if (argc == 1 || (argc > 1 && std::string(argv[0]) == "tasks")) {
         while (true) {
             std::string input_str;
             std::cout << "tasks> ";
@@ -24,42 +31,35 @@ int main(int argc, char *argv[])
             std::vector<std::string> args;
             GetInput(input_str, args);
 
-            size_t arg_count {args.size()};
+            if (args.empty()) continue;
 
-            manager->HandleCommand(arg_count, args);
+            if (manager.HandleCommand(args.size(), args) == RunStatus::Exit) {
+                return 0;
+            }
         }
     } else {
-        std::cout << "Invalid command: Please use `tasks` to enter the task manager.\n";
+        std::cerr << "❌ Invalid command: `" << argv[0] << "`\n"
+                  << "To enter Task Manager CLI, type: `tasks`\n";
         return 1;
     }
-
-    return 0;
 }
 
-void GetInput(std::string& input, std::vector<std::string>& output)
+void GetInput(const std::string& input, std::vector<std::string>& output)
 {
-    /* GetInput(std::string& input, std::vector<std::string>& output)
-     * ------------------------------------------------------------------------------
-     * For a given input by the user the function separates all the input into words,
-     * considering "..." as one word, regardless number of space in the "..."
-     */
-
     std::string current_arg;
     bool inside_quotes{false};
 
-    for (size_t i{}; i < input.length(); i++) {
-        char c = input[i];
-
+    for (const char c : input) {
         if (c == ' ' && !inside_quotes) {
             if (!current_arg.empty()) {
-                output.push_back(current_arg);
+                output.push_back(std::move(current_arg));
                 current_arg.clear();
             }
         } else if (c == '"') {
             inside_quotes = !inside_quotes;
 
             if (!inside_quotes && !current_arg.empty()) {
-                output.push_back(current_arg);
+                output.push_back(std::move(current_arg));
                 current_arg.clear();
             }
         } else {
@@ -69,6 +69,6 @@ void GetInput(std::string& input, std::vector<std::string>& output)
 
     // It is possible that the last word was not pushed into the vector, so we explicitly check for it
     if (!current_arg.empty()) {
-        output.push_back(current_arg);
+        output.push_back(std::move(current_arg));
     }
 }

@@ -7,439 +7,705 @@
 
 /* --------------------Getters-------------------- */
 
-Command Manager::GetCommand(std::string& command)
+inline Command Manager::GetCommand(std::string& command_str)
 {
-    std::ranges::transform(command.begin(), command.end(), command.begin(), ::tolower);
+    ToLower(command_str);
 
-    if      (command == "add") return Command::Add;
-    else if (command == "list") return Command::List;
-    else if (command == "edit") return Command::Edit;
-    else if (command == "delete") return Command::Delete;
-    else if (command == "complete") return Command::Complete;
-    else if (command == "search") return Command::Search;
-    else if (command == "help") return Command::Help;
-    else if (command == "exit") return Command::Exit;
-    else return Command::None;
+    static const std::unordered_map<std::string, Command> command_map {
+        {"add", Command::Add},
+        {"list", Command::List},
+        {"edit", Command::Edit},
+        {"delete", Command::Delete},
+        {"complete", Command::Complete},
+        {"search", Command::Search},
+        {"help", Command::Help},
+        {"exit", Command::Exit}
+    };
+
+    if (const auto it = command_map.find(command_str); it != command_map.end())
+        return it->second;
+
+    return Command::None;
 }
 
-Flag Manager::GetFlag(std::string& flag_str)
+inline Flag Manager::GetFlag(std::string& flag_str)
 {
-    std::ranges::transform(flag_str.begin(), flag_str.end(), flag_str.begin(), ::tolower);
+    ToLower(flag_str);
 
-    if (flag_str == "description") return Flag::Description;
-    else if (flag_str == "priority") return Flag::Priority;
-    else if (flag_str == "due") return Flag::Due;
-    else if (flag_str == "tags") return Flag::Tags;
-    else if (flag_str == "id") return Flag::ID;
-    else if (flag_str == "status") return Flag::Status;
-    else return Flag::None;
+    static const std::unordered_map<std::string, Flag> flag_map {
+        {"description", Flag::Description},
+        {"priority", Flag::Priority},
+        {"due", Flag::Due},
+        {"tags", Flag::Tags},
+        {"id", Flag::ID},
+        {"status", Flag::Status}
+    };
+
+    if (const auto it = flag_map.find(flag_str); it != flag_map.end())
+        return it->second;
+
+    return Flag::None;
 }
 
-Priority Manager::GetPriority(std::string& priority_str)
+inline Priority Manager::GetPriority(std::string& priority_str)
 {
-    std::ranges::transform(priority_str.begin(), priority_str.end(), priority_str.begin(), ::tolower);
+    ToLower(priority_str);
 
-    if (priority_str == "high") return Priority::High;
-    else if (priority_str == "medium") return Priority::Medium;
-    else if (priority_str == "low") return Priority::Low;
-    else return Priority::None;
+    static const std::unordered_map<std::string, Priority> priority_map {
+        {"high", Priority::High},
+        {"medium", Priority::Medium},
+        {"low", Priority::Low}
+    };
+
+    if (const auto it = priority_map.find(priority_str); it != priority_map.end())
+        return it->second;
+
+    return Priority::None;
 }
 
-Status Manager::GetStatus(std::string& status_str)
+inline Status Manager::GetStatus(std::string& status_str)
 {
-    std::ranges::transform(status_str.begin(), status_str.end(), status_str.begin(), ::tolower);
+    ToLower(status_str);
 
-    if (status_str == "completed") return Status::Completed;
-    else if (status_str == "pending") return Status::Pending;
-    else return Status::None;
+    static const std::unordered_map<std::string, Status> status_map {
+        {"completed", Status::Completed},
+        {"pending", Status::Pending}
+    };
+
+    if (const auto it = status_map.find(status_str); it != status_map.end())
+        return it->second;
+
+    return Status::None;
 }
 
 /* --------------------Converters-------------------- */
 
-std::string Manager::GetStrPriority(const Priority &priority) const
+inline std::string Manager::GetPriorityStr(const Priority &priority)
 {
-    switch (priority) {
-        case Priority::High: return "high";
-        case Priority::Medium: return "medium";
-        case Priority::Low: return "low";
-        default: return "none";
+    static const std::unordered_map<Priority, std::string> priority_str_map {
+        {Priority::High, "high"},
+        {Priority::Medium, "medium"},
+        {Priority::Low, "low"},
+    };
+
+    if (const auto it = priority_str_map.find(priority); it != priority_str_map.end())
+        return it->second;
+
+    return "none";
+}
+
+inline std::string Manager::GetFlagStr(const Flag &flag)
+{
+    static const std::unordered_map<Flag, std::string> flag_str_map {
+        {Flag::Description, "description"},
+        {Flag::Priority, "priority"},
+        {Flag::Due, "due"},
+        {Flag::Tags, "tags"},
+        {Flag::ID, "id"},
+        {Flag::Status, "status"}
+    };
+
+    if (const auto it = flag_str_map.find(flag); it != flag_str_map.end())
+        return it->second;
+
+    return "none";
+}
+
+/* --------------------Helpers-------------------- */
+
+inline void Manager::ToLower(std::string& str)
+{
+    std::ranges::transform(str, str.begin(), ::tolower);
+}
+
+inline bool Manager::FlagUsed(const Flag &flag) const
+{
+    const auto it = m_flags.find(flag);
+    return it != m_flags.end() && !it->second.empty();
+}
+
+inline bool Manager::IsFlag(const std::string& flag)
+{
+    return flag.length() >= 3 && flag.starts_with("--");
+}
+
+DateValidationResult Manager::ValidateDateFormat(std::string &date)
+{
+    const std::regex format(R"(^(\d{4})([-/\.])(\d{1,2})\2(\d{1,2})$)");
+
+    std::smatch match;
+    if (!std::regex_match(date, match, format))
+        return DateValidationResult::InvalidFormat;
+
+    const int year = std::stoi(match[1]);
+    const int month = std::stoi(match[3]);
+    const int day = std::stoi(match[4]);
+
+    constexpr int MIN_YEAR = 1900;
+    if (year < MIN_YEAR || month < 1 || month > 12)
+        return DateValidationResult::InvalidValue;
+
+    static constexpr std::array<int, 12> days_in_month = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    const int max_days = days_in_month[month - 1] +
+        ((month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) ? 1 : 0);
+    if (day < 1 || day > max_days)
+        return DateValidationResult::InvalidValue;
+
+    std::ostringstream normalized_date;
+    normalized_date << std::setfill('0') << std::setw(4) << year << "-"
+                                            << std::setw(2) << month << "-"
+                                            << std::setw(2) << day;
+
+    date = normalized_date.str();
+    return DateValidationResult::Success;
+}
+
+inline void Manager::PrintExitMessage()
+{
+    std::cout << "\n============================================\n"
+              << "  ✅ Thank you for using Task Manager CLI! \n"
+              << "     Have a productive day! 🚀  \n"
+              << "============================================\n\n";
+}
+
+void Manager::SplitQuotedText(const std::string& input, std::vector<std::string>& output)
+{
+    std::string current_arg;
+
+    for (const char c : input) {
+        if (c == ' ') {
+            if (!current_arg.empty()) {
+                ToLower(current_arg);
+                output.push_back(std::move(current_arg));
+                current_arg.clear();
+            }
+        }
+
+        current_arg += c;
+    }
+
+    // It is possible that the last word was not pushed into the vector, so we explicitly check for it
+    if (!current_arg.empty()) {
+        ToLower(current_arg);
+        output.push_back(std::move(current_arg));
     }
 }
 
 /* --------------------Main Functionality-------------------- */
 
-void Manager::Add(size_t& argc, std::vector<std::string>& argv)
+void Manager::Add(const size_t argc, const std::vector<std::string>& argv)
 {
-    // Description is required
-    if (m_flags[Flag::Description].empty()) {
-        std::cout << "You must provide a description for the task!" << std::endl;
+    if (!FlagUsed(Flag::Description)) {
+        PrintArgumentError("--description", "is required for this command.");
         return;
     }
 
     Task task;
 
-    // Here we go through all the flags and add the task
-    for (auto& flag : m_flags) {
-        // Flags that are not possible to set when adding a task
-        if (flag.first == Flag::Status || flag.first == Flag::ID) continue;
+    for (auto &[flag, values] : m_flags) {
+        if (flag == Flag::Status || flag == Flag::ID) {
+            PrintInvalidFlagsError("add", {"description", "priority", "due", "tags"});
+            continue;
+        }
 
-        switch (flag.first) {
+        switch (flag) {
             case Flag::Description:
-            {
-                task.description = flag.second;
+                task.description = values[0];
                 break;
-            }
 
             case Flag::Priority:
-            {
-                Priority priority = GetPriority(flag.second);
-                if (priority == Priority::None) {
-                    std::cout << "Unknown priority `" << flag.second << "`" << std::endl;
-                    std::cout << "Type `help` for help!" << std::endl;
+                task.priority = GetPriority(values[0]);
+                if (task.priority == Priority::None) {
+                    PrintInvalidValuesError("priority", values[0],
+                        "`high`, `medium`, or `low`");
                     return;
                 }
-                task.priority = priority;
                 break;
-            }
 
             case Flag::Due:
-            {
-                task.due = flag.second;
+                switch (ValidateDateFormat(values[0])) {
+                    case DateValidationResult::InvalidFormat:
+                        PrintInvalidDueDateFormatError(values[0]);
+                        return;
+                    case DateValidationResult::InvalidValue:
+                        PrintInvalidValuesError("due", values[0], "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`");
+                        return;
+                    default:
+                        task.due = values[0];
+                        break;
+                }
+
                 break;
-            }
 
             case Flag::Tags:
-            {
-                // TODO: Handle the tags
+                task.tags = values;
                 break;
-            }
 
-            default: break;
+            default:
+                break;
         }
     }
 
-    // Things that the user cannot give
     task.id = m_prev_id++;
-    task.status = Status::Pending;
 
     m_tasks.push_back(task);
-} // add --description DESCRIPTION --priority PRIORITY --due DUE DATE --tags tag1 tag2 ... tagN
+
+    std::cout << "📌 Task added successfully! (ID: " << task.id << ")\n";
+}
 
 void Manager::List() const
 {
-    // Top line
-    std::cout << std::setfill('-') << std::setw(126) << "" << std::setfill(' ') << std::endl;
-
-    // Titles
-    std::cout << std::left;
-    std::cout << std::setw(7) << "| ID";
-    std::cout << std::setw(50) << "| Description";
-    std::cout << std::setw(13) << "| Due Date";
-    std::cout << std::setw(13) << "| Priority";
-    std::cout << std::setw(13) << "| Status";
-    std::cout << std::setw(29) << "| Tags";
-    std::cout << std::right << "|" << std::left << std::endl;
-
-    for (auto& task : m_tasks) {
-        // Task splitters
-        std::cout << std::setfill('-') << std::left;
-        std::cout << std::setw(7) << "|";
-        std::cout << std::setw(50) << "|";
-        std::cout << std::setw(13) << "|";
-        std::cout << std::setw(13) << "|";
-        std::cout << std::setw(13) << "|";
-        std::cout << std::setw(30) << "|";
-        std::cout << std::setfill(' ') << std::endl;
-
-        // Task
-        std::cout << std::left;
-        std::cout << "| " << std::setw(5) << task.id;
-        std::cout << "| " << std::setw(48) << task.description;
-        std::cout << "| " << std::left << std::setw(11) << task.due;
-        std::cout << "| " << std::setw(11) << GetStrPriority(task.priority);
-        std::string status = ((task.status == Status::Pending) ? "Pending" : "Completed");
-        std::cout << "| " << std::setw(11) << status;
-        // TODO: Display the tags
-        std::cout << "| " << std::setw(27) << "tags";
-        std::cout << std::right << "|" << std::left << std::endl;
+    if (m_tasks.empty() || m_tasks.size() == m_hidden_count) {
+        std::cout << "\n📭 No tasks available.\n";
+        return;
     }
-    std::cout << std::setfill('-') << std::setw(126) << "";
-    std::cout << std::setfill(' ') << std::endl;
-} // list
 
-void Manager::Edit(size_t& argc, std::vector<std::string>& argv)
+    // **Step 1: Compute Column Widths Dynamically**
+    size_t id_width = 4;
+    size_t desc_width = 11;
+    size_t due_width = 9;
+    size_t priority_width = 8;
+    size_t status_width = 7;
+    size_t tags_width = 4;
+
+    for (const auto& task : m_tasks) {
+        if (task.hidden) continue;
+
+        id_width = std::max(id_width, std::to_string(task.id).length());
+        desc_width = std::max(desc_width, task.description.length());
+        due_width = std::max(due_width, task.due.length());
+        priority_width = std::max(priority_width, GetPriorityStr(task.priority).length());
+        status_width = std::max(status_width, static_cast<size_t>(task.status == Status::Pending ? 8 : 9));
+
+        size_t tag_length = 0;
+
+        if (!task.tags.empty()) {
+            const size_t total_tag_chars = std::accumulate(
+                task.tags.begin(), task.tags.end(), 0,
+                [](size_t sum, const std::string& tag) { return sum + tag.length(); });
+
+            const size_t num_commas = 2 * (task.tags.size() - 1); // Space for ", " between tags
+
+            tag_length = total_tag_chars + num_commas;
+        }
+
+        tags_width = std::max(tags_width, tag_length);
+    }
+
+    // Add some padding for readability
+    id_width += 2;
+    desc_width += 2;
+    due_width += 2;
+    priority_width += 2;
+    status_width += 2;
+    tags_width += 2;
+
+    // **Step 2: Print Header**
+    const size_t total_width = id_width + desc_width + due_width + priority_width + status_width + tags_width + 14;
+
+    std::cout << std::setfill('-') << std::setw(static_cast<int>(total_width)) << "" << std::setfill(' ') << "\n";
+
+    std::cout << std::left
+              << "| " << std::setw(static_cast<int>(id_width)) << "ID"
+              << "| " << std::setw(static_cast<int>(desc_width)) << "Description"
+              << "| " << std::setw(static_cast<int>(due_width)) << "Due Date"
+              << "| " << std::setw(static_cast<int>(priority_width)) << "Priority"
+              << "| " << std::setw(static_cast<int>(status_width)) << "Status"
+              << "| " << std::setw(static_cast<int>(tags_width)) << "Tags"
+              << " |" << "\n";
+
+    std::cout << std::setfill('-') << std::setw(static_cast<int>(total_width)) << "" << std::setfill(' ') << "\n";
+
+    // **Step 3: Print Each Task**
+    for (const auto& task : m_tasks) {
+        if (task.hidden) continue;
+
+        std::ostringstream tags_stream;
+        for (size_t i = 0; i < task.tags.size(); ++i) {
+            if (i > 0) tags_stream << ", ";  // Add separator before each new tag (except first)
+            tags_stream << task.tags[i];
+        }
+
+        std::cout << std::left
+                  << "| " << std::setw(static_cast<int>(id_width)) << task.id
+                  << "| " << std::setw(static_cast<int>(desc_width)) << task.description
+                  << "| " << std::setw(static_cast<int>(due_width)) << task.due
+                  << "| " << std::setw(static_cast<int>(priority_width)) << GetPriorityStr(task.priority)
+                  << "| " << std::setw(static_cast<int>(status_width)) << (task.status == Status::Pending ? "Pending" : "Completed")
+                  << "| " << std::setw(static_cast<int>(tags_width)) << tags_stream.str()
+                  << " |" << "\n";
+    }
+
+    // **Step 4: Print Bottom Line**
+    std::cout << std::setfill('-') << std::setw(static_cast<int>(total_width)) << "" << std::setfill(' ') << "\n";
+}
+
+void Manager::Edit(const size_t argc, const std::vector<std::string>& argv)
 {
-    // ID is required
-    if (m_flags[Flag::ID].empty()) {
-        std::cout << "You must provide a valid ID!" << std::endl;
+    if (!FlagUsed(Flag::ID)) {
+        PrintArgumentError("--id", "is required for this command.");
         return;
     }
 
-    unsigned int ID{};
-
-    // Possible that the user entered non-numeric value
-    try {
-        bool validID{false};
-
-        ID = std::stoi(m_flags[Flag::ID]);
-
-        // Check if there is a task with a given ID
-        for (size_t i{}; i < m_tasks.size(); i++) {
-            if (m_tasks[i].id == ID) {
-                validID = true;
-            }
-        }
-
-        // No task with a given ID was found
-        if (!validID) {
-            std::cout << "Invalid ID: Task with the ID " << argv[2] << " doesn't exist!" << std::endl;
-            return;
-        }
-    } catch (const std::exception& e) {
-        std::cout << "The ID of the task should be an integer!" << std::endl;
-        return;
-    }
-
-    // Here we go through all the flags and add the task
-    for (auto& flag : m_flags) {
-        switch (flag.first) {
-            case Flag::Description:
-            {
-                m_tasks[ID].description = flag.second;
-                break;
-            }
-
-            case Flag::Priority:
-            {
-                Priority priority = GetPriority(flag.second);
-                if (priority == Priority::None) {
-                    std::cout << "Unknown priority: " << flag.second << std::endl;
-                    std::cout << "Type `help` for help!" << std::endl;
-                    return;
-                }
-                m_tasks[ID].priority = priority;
-                break;
-            }
-
-            case Flag::Due:
-            {
-                m_tasks[ID].due = flag.second;
-                break;
-            }
-
-            case Flag::Tags:
-            {
-                // TODO: Handle the tags
-                break;
-            }
-
-            case Flag::Status:
-            {
-                Status status = GetStatus(flag.second);
-                if (status == Status::None) {
-                    std::cout << "Unknown status: " << flag.second << std::endl;
-                    std::cout << "Type `help` for help!" << std::endl;
-                    return;
-                }
-                m_tasks[ID].status = status;
-                break;
-            }
-
-            default: break;
-        }
-    }
-} // edit --description DESCRIPTION --priority PRIORITY --due DUE DATE --status STATUS
-
-void Manager::Delete(size_t& argc, std::vector<std::string>& argv)
-{
-    // ID required
-    if (m_flags[Flag::ID].empty()) {
-        std::cout << "You must provide a valid ID!" << std::endl;
-        return;
-    }
-
-    // Possible that the ID is non-numeric
-    try {
-        // Check if there is a task with a given ID
-        unsigned short int ID = std::stoi(m_flags[Flag::ID]);
-        for (size_t i{}; i < m_tasks.size(); i++) {
-            if (m_tasks[i].id == ID) {
-                m_tasks.erase(m_tasks.begin() + i);
-                return;
-            }
-        }
-        std::cout << "Invalid ID: Task with the ID " << argv[2] << " doesn't exist!" << std::endl;
-        return;
-    } catch (const std::exception& e) {
-        std::cout << "The ID of the task should be an integer!" << std::endl;
-        return;
-    }
-} // delete --id ID
-
-void Manager::Complete(size_t& argc, std::vector<std::string>& argv)
-{
-    // ID required
-    if (m_flags[Flag::ID].empty()) {
-        std::cout << "You must provide a valid ID!" << std::endl;
+    if (m_flags.size() == 1) {
+        std::cout << "❌ Error: No changes specified. Use other flags (e.g., --description, --priority, --due, --tags, --status) along with --id.\n";
         return;
     }
 
     try {
-        // Check if there is a task with a given ID
-        unsigned short int ID = std::stoi(m_flags[Flag::ID]);
-        for (size_t i{}; i < m_tasks.size(); i++) {
-            if (m_tasks[i].id == ID) {
-                m_tasks[i].status = Status::Completed;
-                return;
+        unsigned short int ID = std::stoi(m_flags[Flag::ID][0]);
+        const auto it = std::ranges::find_if(m_tasks.begin(), m_tasks.end(), [ID](const Task& task) { return task.id == ID; });
+
+        if (it == m_tasks.end()) {
+            return PrintTaskNotFoundError(m_flags[Flag::ID][0]);
+        }
+
+        for (auto& [flag, values] : m_flags) {
+            if (flag == Flag::ID) continue;
+
+            DateValidationResult date_status;
+
+            switch (flag) {
+                case Flag::Description:
+                    it->description = values[0];
+                    break;
+
+                case Flag::Priority:
+                    it->priority = GetPriority(values[0]);
+                    if (it->priority == Priority::None) {
+                        return PrintInvalidValuesError("priority", values[0],
+                            "`high`, `medium`, or `low`");
+                    }
+                    break;
+
+                case Flag::Due:
+                    date_status = ValidateDateFormat(values[0]);
+                    if (date_status == DateValidationResult::InvalidFormat) {
+                        return PrintInvalidDueDateFormatError(values[0]);
+                    } else if (date_status == DateValidationResult::InvalidValue) {
+                        return PrintInvalidValuesError("due", values[0],
+                            "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`");
+                    }
+                    it->due = values[0];
+                    break;
+
+                case Flag::Tags:
+                    it->tags = values;
+                    break;
+
+                case Flag::Status:
+                    it->status = GetStatus(values[0]);
+                    if (it->status == Status::None) {
+                        return PrintInvalidValuesError("status", values[0],
+                            "`pending`, `completed`");
+                    }
+                    break;
+
+                default:
+                    break;
             }
         }
-        std::cout << "Invalid ID: Task with the ID " << argv[2] << " doesn't exist!" << std::endl;
-        return;
-    } catch (const std::exception& e) {
-        std::cout << "The ID of the task should be an integer!" << std::endl;
+
+        std::cout << "✏️  Task (ID: " << it->id << ") updated successfully!\n";
+    } catch (const std::exception&) {
+        PrintInvalidValuesError("id", m_flags[Flag::ID][0], "integer");
+    }
+}
+
+void Manager::Delete(const size_t argc, const std::vector<std::string>& argv)
+{
+    if (!FlagUsed(Flag::ID)) {
+        PrintArgumentError("--id", "is required for this command.");
         return;
     }
-} // complete --id ID
 
-void Manager::Help() const
+    if (m_flags.size() > 1) {
+        PrintInvalidFlagsError("delete", {"id"});
+        return;
+    }
+
+    try {
+        const unsigned short int ID = std::stoi(m_flags[Flag::ID][0]);
+
+        if (const auto it = std::ranges::find_if(m_tasks.begin(), m_tasks.end(),
+            [ID](const Task& task) { return task.id == ID; }); it != m_tasks.end()) {
+            m_tasks.erase(it);
+            std::cout << "🗑️  Task (ID: " << ID << ") deleted successfully!\n";
+        } else {
+            PrintTaskNotFoundError(m_flags[Flag::ID][0]);
+        }
+    } catch (const std::exception&) {
+        PrintInvalidValuesError("id", m_flags[Flag::ID][0], "integer");
+    }
+}
+
+void Manager::Complete(const size_t argc, const std::vector<std::string>& argv)
 {
-    /* GetHelp : Gives the user all the available options */
+    if (!FlagUsed(Flag::ID)) {
+        PrintArgumentError("--id", "is required for this command.");
+        return;
+    }
 
-    std::cout << "\nUsage: [options] [flags] values" << std::endl;
-    std::cout << "\n[options]:\n";
-    std::cout << std::left;
-    std::cout << std::setw(20) << "\tadd" << std::setw(50) << "Add tasks to the manager." << std::endl;
-    std::cout << std::setw(20) << "\tlist" << std::setw(50) << "List all the tasks in the manager." << std::endl;
-    std::cout << std::setw(20) << "\tedit" << std::setw(50) << "Edit the tasks in the manager." << std::endl;
-    std::cout << std::setw(20) << "\tdelete" << std::setw(50) << "Delete the tasks in the manager." << std::endl;
-    std::cout << std::setw(20) << "\tcomplete" << std::setw(50) << "Complete the tasks in the manager." << std::endl;
-    std::cout << std::setw(20) << "\tsearch" << std::setw(50) << "Search the tasks in the manager." << std::endl;
-    std::cout << std::setw(20) << "\thelp" << std::setw(50) << "Display this help." << std::endl;
-    std::cout << std::setw(20) << "\texit" << std::setw(50) << "Exit the program." << std::endl;
-    std::cout << "[flags]:\n";
-    std::cout << std::left;
-    std::cout << std::setw(20) << "\t--description" << std::setw(50) << "Description of the task" << std::endl;
-    std::cout << std::setw(20) << "\t--priority" << std::setw(50) << "Priority of the task" << std::endl;
-    std::cout << std::setw(20) << "\t--due" << std::setw(50) << "Due date of the task" << std::endl;
-    std::cout << std::setw(20) << "\t--tags" << std::setw(50) << "Tags of the task" << std::endl;
-    std::cout << std::setw(20) << "\t--id" << std::setw(50) << "ID of the task" << std::endl;
-    std::cout << std::setw(20) << "\t--status" << std::setw(50) << "Status of the task" << std::endl;
-} // help
+    if (m_flags.size() > 1) {
+        PrintInvalidFlagsError("complete", {"id"});
+        return;
+    }
+
+    try {
+        const unsigned short int ID = std::stoi(m_flags[Flag::ID][0]);
+
+        if (const auto it = std::ranges::find_if(m_tasks.begin(), m_tasks.end(),
+            [ID](const Task& task) { return task.id == ID; }); it != m_tasks.end()) {
+            it->status = Status::Completed;
+            std::cout << "✅ Task (ID: " << ID << ") marked as completed!\n";
+        } else {
+            PrintTaskNotFoundError(m_flags[Flag::ID][0]);
+        }
+    } catch (const std::exception&) {
+        PrintInvalidValuesError("id", m_flags[Flag::ID][0], "integer");
+    }
+}
+
+void Manager::Search(const size_t argc, const std::vector<std::string> &argv)
+{
+    const bool descriptionPresent = FlagUsed(Flag::Description);
+    const bool tagsPresent = FlagUsed(Flag::Tags);
+
+    if (!descriptionPresent && !tagsPresent) {
+        PrintArgumentError("--description / --tags", "should be present.");
+        return;
+    }
+
+    if (m_flags.size() > (descriptionPresent + tagsPresent)) {
+        PrintInvalidFlagsError("search", {"description", "tags"});
+        return;
+    }
+
+    if (descriptionPresent) {
+        std::vector<std::string> keywords;
+        SplitQuotedText(m_flags[Flag::Description][0], keywords);
+
+        for (auto &task : m_tasks) {
+            std::string description = task.description;
+            ToLower(description);
+
+            const bool hasAnyOccurrences = std::ranges::any_of(keywords.begin(), keywords.end(),
+                [&description](const std::string& keyword) {
+                    return description.find(keyword) != std::string::npos;
+                });
+
+            task.hidden = !hasAnyOccurrences;
+        }
+    }
+
+    if (tagsPresent) {
+        std::vector<std::string> requiredTags = m_flags[Flag::Tags];
+        std::ranges::for_each(requiredTags, [](std::string& word) { ToLower(word); });
+
+        for (auto &task : m_tasks) {
+            const bool hasAnyTag = std::ranges::any_of(requiredTags,
+                [&task](const std::string& tag) {
+                    return std::ranges::find_if(task.tags,
+                        [&tag](const std::string& taskTag) {
+                            std::string taskTagLower = taskTag;
+                            ToLower(taskTagLower);
+                            return taskTagLower == tag;
+                        }) != task.tags.end();
+                });
+
+            task.hidden |= !hasAnyTag;
+        }
+    }
+
+    m_hidden_count = std::ranges::count_if(m_tasks, [](const Task& task) { return task.hidden; });
+
+    List();
+
+    if (m_hidden_count > 0) {
+        std::ranges::for_each(m_tasks, [](Task& task) { task.hidden = false; });
+        m_hidden_count = 0;
+    }
+}
+
+void Manager::Help()
+{
+    std::cout << "\n📖 Task Manager CLI - Help Guide\n";
+    std::cout << "===========================================\n";
+    std::cout << "📌 Task Management Commands:\n";
+    std::cout << "  ➕ `add`        - Add a new task\n";
+    std::cout << "  🗑  `delete`     - Remove a task by ID\n";
+    std::cout << "  ✅ `complete`   - Mark a task as completed\n";
+    std::cout << "  ✏️  `edit`       - Modify a task\n\n";
+
+    std::cout << "📋 Viewing & Searching Commands:\n";
+    std::cout << "  📋 `list`       - Show all tasks\n";
+    std::cout << "  🔍 `search`     - Find tasks by description or tag\n\n";
+
+    std::cout << "⚙️  General Commands:\n";
+    std::cout << "  🆘 `help`       - Show this guide\n";
+    std::cout << "  ❌ `exit`       - Exit the Task Manager\n\n";
+
+    std::cout << "🚩 Flags and Usage:\n";
+    std::cout << "  --description [TEXT]            - Description of the task (Required for add)\n";
+    std::cout << "  --priority [high|medium|low]    - Task priority\n";
+    std::cout << "  --due [YYYY-MM-DD]              - Due date of the task\n";
+    std::cout << "  --tags [tag1 tag2 ...]          - Tags for categorization\n";
+    std::cout << "  --id [NUMBER]                   - Specify task ID (Required for delete, edit, complete)\n";
+    std::cout << "  --status [pending|completed]    - Change task status (For edit)\n\n";
+
+    std::cout << "💡 Examples:\n";
+    std::cout << "  ➕ Add a new task:\n";
+    std::cout << "     task add --description \"Finish project\" --priority high --due 2025-02-10 --tags work,urgent\n";
+    std::cout << "  🗑  Delete a task:\n";
+    std::cout << "     task delete --id 3\n";
+    std::cout << "  ✅ Mark a task as completed:\n";
+    std::cout << "     task complete --id 5\n";
+    std::cout << "  🔍 Search tasks by tag:\n";
+    std::cout << "     task search --tags important\n\n";
+
+    std::cout << "⚠️  Notes:\n";
+    std::cout << "  - `add` requires `--description`.\n";
+    std::cout << "  - `delete`, `edit`, and `complete` require `--id`.\n";
+    std::cout << "  - `list` has no flags and simply displays tasks.\n";
+    std::cout << "  - `search` can be used with `--description` or `--tags`.\n";
+
+    std::cout << "\n✨ Enjoy using Task Manager CLI! 🚀\n";
+}
 
 /* --------------------Command Handling-------------------- */
 
-void Manager::HandleCommand(size_t& argc, std::vector<std::string>& argv)
+RunStatus Manager::HandleCommand(const size_t argc, const std::vector<std::string> &argv)
 {
-    /* This function executes the command given by the user, and in case of an error handles it */
-
-    Command command = GetCommand(argv[0]);
-
+    std::string command_str = argv[0];
+    const Command command = GetCommand(command_str);
     if (command == Command::None) {
-        std::cout << "Command not found: " << argv[0] << "\n";
-        std::cout << "For a list of available commands, type 'help'.\n";
-        return;
+        PrintCommandNotFoundError(command_str);
+        return RunStatus::Run;
     }
 
-    InitFlagMap(argc, argv);
-
-    switch (command) {
-        case Command::Add:
-        {
-            Add(argc, argv);
-            break;
-        }
-
-        case Command::List:
-        {
-            List();
-            break;
-        }
-
-        case Command::Edit:
-        {
-            Edit(argc, argv);
-            break;
-        }
-
-        case Command::Delete:
-        {
-            Delete(argc, argv);
-            break;
-        }
-
-        case Command::Complete:
-        {
-            Complete(argc, argv);
-            break;
-        }
-
-        case Command::Search:
-        {
-            std::cout << "Searching tasks..." << std::endl;
-            break;
-        }
-
-        case Command::Help:
-        {
-            Help();
-            break;
-        }
-
-        case Command::Exit:
-        {
-            std::cout << "\n\nThank you for using this program.\nExiting the program..." << std::endl;
-            exit(0);
-        }
-
-        default:
-        {
-            std::cerr << "Unknown error!" << std::endl;
-            std::cerr << "Possible configuration file problems, please try to reinstall the program." << std::endl;
-            break;
-        }
+    if (!InitFlagMap(argc, argv)) {
+        ClearFlagMap();
+        return RunStatus::Run;
     }
+
+    if (command == Command::Exit) {
+        PrintExitMessage();
+        return RunStatus::Exit;
+    }
+
+    ExecuteCommand(command, argc, argv);
 
     ClearFlagMap();
+    return RunStatus::Run;
 }
 
-/* --------------------Flag-Value Map Related-------------------- */
+void Manager::ExecuteCommand(const Command &command, const size_t argc, const std::vector<std::string> &argv)
+{
+    switch (command) {
+        case Command::Add:      Add(argc, argv);        break;
+        case Command::List:     List();                 break;
+        case Command::Edit:     Edit(argc, argv);       break;
+        case Command::Delete:   Delete(argc, argv);     break;
+        case Command::Complete: Complete(argc, argv);   break;
+        case Command::Search:   Search(argc, argv);     break;
+        case Command::Help:     Help();                 break;
+        default:                                        break;
+    }
+}
 
-void Manager::InitFlagMap(size_t& argc, std::vector<std::string>& argv)
+/* --------------------Flag-Value Map Handling-------------------- */
+
+bool Manager::InitFlagMap(const size_t argc, const std::vector<std::string> &argv)
 {
     for (size_t i{1}; i < argc; i++) {
-        std::string flag_str{};
+        std::string flag_str;
 
-        // TODO: Handle when the flag is --tags, because if it is then there might be multiple values
-        if (argv[i][0] == '-' && argv[i][1] == '-') {
+        if (IsFlag(argv[i])) {
             flag_str = argv[i].substr(2);
         } else {
-            std::cout << "Value without a flag detected!\nPlease follow the syntax : [--flag value]" << std::endl;
-            return;
+            PrintArgumentError(argv[i], "is not a valid flag or was used incorrectly.");
+            return false;
         }
 
         Flag flag = GetFlag(flag_str);
-
         if (flag == Flag::None) {
-            std::cout << "Flag not found: --" << flag_str << std::endl;
-            std::cout << "For a list of available commands, type 'help'.\n";
-            return;
+            PrintArgumentError("--" + flag_str, "is not recognized.");
+            return false;
         }
 
-        if (i + 1 >= argc) {
-            std::cout << "Too few arguments. After --" << flag_str << " you should provide a value!" << std::endl;
-            return;
-        } else if (argv[i + 1][0] == '-' && argv[i + 1][1] == '-') {
-            std::cout << "Value not detected for the flag `" << argv[i] << "`" << std::endl;
-            std::cout << "Please follow the syntax : [--flag value]" << std::endl;
-            return;
+        if (i + 1 >= argc || IsFlag(argv[i + 1])) {
+            PrintArgumentError("--" + flag_str, "is missing a required value.");
+            return false;
         }
 
-        m_flags[flag] = argv[i + 1];
         i++;
+
+        std::vector<std::string>& values = m_flags[flag];
+        while (i < argc && !IsFlag(argv[i])) {
+            values.push_back(argv[i]);
+            i++;
+        }
+
+        if (flag != Flag::Tags && values.size() > 1) {
+            PrintArgumentError("--" + flag_str, "only accepts **one** value. Use `--tags tag1 tag2 ...` for multiple values.");
+            return false;
+        }
+
+        --i;
     }
+
+    return true;
 }
 
-void Manager::ClearFlagMap()
+inline void Manager::ClearFlagMap()
 {
     m_flags.clear();
+}
+
+/* --------------------Error Handling-------------------- */
+
+static constexpr auto HELP_HINT = "🔹 Type 'help' for more details.\n";
+
+void Manager::PrintCommandNotFoundError(const std::string &command)
+{
+    std::cout << "\n❌ Error: Unknown command → `" << command << "`\n"
+              << HELP_HINT << "\n";
+}
+
+void Manager::PrintInvalidDueDateFormatError(const std::string &date)
+{
+    std::cout << "\n❌ Error: Invalid date format → `" << date << "`\n"
+              << "🔹 Accepted formats: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`\n"
+              << HELP_HINT << "\n";
+}
+
+void Manager::PrintTaskNotFoundError(const std::string& id) {
+    std::cout << "❌ Error: Task with ID `" << id << "` not found.\n";
+}
+
+void Manager::PrintInvalidFlagsError(const std::string& command, const std::vector<std::string>& valid_flags)
+{
+    std::ostringstream oss;
+    oss << "\n❌ Error: Invalid flags used with the `" << command << "` command.\n"
+        << "🔹 Allowed flags: ";
+
+    for (size_t i = 0; i < valid_flags.size(); i++) {
+        oss << "`--" << valid_flags[i] << "`" << (i + 1 < valid_flags.size() ? ", " : "");
+    }
+
+    oss << "\n" << HELP_HINT << "\n";
+    std::cout << oss.str();
+}
+
+void Manager::PrintInvalidValuesError(const std::string& flag, const std::string& value, const std::string& expected)
+{
+    std::cout << "\n❌ Error: Invalid value `" << value << "` for flag `--" << flag << "`.\n"
+              << "🔹 Expected: " << expected << "\n"
+              << HELP_HINT << "\n";
+}
+
+void Manager::PrintArgumentError(const std::string& arg, const std::string& message)
+{
+    std::cout << "\n❌ Error: `" << arg << "` " << message << "\n" << HELP_HINT << "\n";
 }

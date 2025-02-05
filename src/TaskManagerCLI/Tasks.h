@@ -51,15 +51,35 @@ enum class Status
     None
 };
 
+// Possible outputs when validating dates
+enum class DateValidationResult
+{
+    Success,
+    InvalidFormat,
+    InvalidValue
+};
+
+// Possible outcomes of the output (that is exit the program or not)
+enum class RunStatus
+{
+    Run,
+    Exit,
+    None
+};
+
 // Task structure with all its parameters
 struct Task
 {
+    Task()
+        : id(0), priority(Priority::None), status(Status::Pending), due(), tags{}, hidden(false) {}
+
     unsigned short int id;
     std::string description;
     Priority priority;
     Status status;
     std::string due;
     std::vector<std::string> tags;
+    bool hidden;
 };
 
 #endif //TASKS_H
