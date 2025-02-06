@@ -17,6 +17,10 @@ enum class Command
     Delete,
     Complete,
     Search,
+    Filter,
+    Sort,
+    Tag,
+    Undo,
     Help,
     Exit,
     None
@@ -31,16 +35,23 @@ enum class Flag
     Tags,
     ID,
     Status,
+    To,
+    SortBy,
+    SortOrder,
+    Add,
+    Remove,
+    List,
     None
 };
 
 // Possible priorities for the tasks
 enum class Priority
 {
-    High,
-    Medium,
+    None,
     Low,
-    None
+    Medium,
+    High,
+    Invalid
 };
 
 // Possible statuses for the tasks
@@ -48,6 +59,13 @@ enum class Status
 {
     Pending,
     Completed,
+    None
+};
+
+enum class Order
+{
+    Ascending,
+    Descending,
     None
 };
 
