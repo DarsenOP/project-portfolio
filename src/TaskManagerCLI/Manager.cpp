@@ -26,21 +26,21 @@ Manager::Manager()
 inline Command Manager::GetCommand(const std::string& command_str)
 {
     static const std::unordered_map<std::string, Command> command_map {
-        {"add", Command::Add},
-        {"list", Command::List},
-        {"edit", Command::Edit},
-        {"delete", Command::Delete},
-        {"complete", Command::Complete},
-        {"search", Command::Search},
-        {"filter", Command::Filter},
-        {"sort", Command::Sort},
-        {"tag", Command::Tag},
-        {"undo", Command::Undo},
-        {"export", Command::Export},
-        {"import", Command::Import},
-        {"config", Command::Config},
-        {"help", Command::Help},
-        {"exit", Command::Exit}
+            {"add", Command::Add},      {"a", Command::Add},
+            {"list", Command::List},    {"ls", Command::List},
+            {"edit", Command::Edit},    {"e", Command::Edit},
+            {"delete", Command::Delete},{"rm", Command::Delete},
+            {"complete", Command::Complete},{"c", Command::Complete},
+            {"search", Command::Search},{"s", Command::Search},
+            {"filter", Command::Filter},{"f", Command::Filter},
+            {"sort", Command::Sort},    {"sr", Command::Sort},
+            {"tag", Command::Tag},      {"t", Command::Tag},
+            {"undo", Command::Undo},    {"u", Command::Undo},
+            {"export", Command::Export},{"exp", Command::Export},
+            {"import", Command::Import},{"imp", Command::Import},
+            {"config", Command::Config},{"cfg", Command::Config},
+            {"help", Command::Help},    {"h", Command::Help},
+            {"exit", Command::Exit},    {"q", Command::Exit}
     };
 
     if (const auto it = command_map.find(command_str); it != command_map.end())
@@ -52,20 +52,20 @@ inline Command Manager::GetCommand(const std::string& command_str)
 inline Flag Manager::GetFlag(const std::string& flag_str)
 {
     static const std::unordered_map<std::string, Flag> flag_map {
-        {"description", Flag::Description},
-        {"priority", Flag::Priority},
-        {"due", Flag::Due},
-        {"to", Flag::To},
-        {"tags", Flag::Tags},
-        {"id", Flag::ID},
-        {"by", Flag::SortBy},
-        {"order", Flag::SortOrder},
-        {"add", Flag::Add},
-        {"remove", Flag::Remove},
-        {"list", Flag::List},
-        {"status", Flag::Status},
-        {"file", Flag::File},
-        {"default-priority", Flag::DefaultPriority}
+            {"description", Flag::Description}, {"d", Flag::Description},
+            {"priority", Flag::Priority},       {"p", Flag::Priority},
+            {"due", Flag::Due},                 {"du", Flag::Due},
+            {"to", Flag::To},                   {"t", Flag::To},
+            {"tags", Flag::Tags},               {"tg", Flag::Tags},
+            {"id", Flag::ID},                   {"i", Flag::ID},
+            {"by", Flag::SortBy},               {"b", Flag::SortBy},
+            {"order", Flag::SortOrder},         {"o", Flag::SortOrder},
+            {"add", Flag::Add},                 {"a", Flag::Add},
+            {"remove", Flag::Remove},           {"r", Flag::Remove},
+            {"list", Flag::List},               {"l", Flag::List},
+            {"status", Flag::Status},           {"s", Flag::Status},
+            {"file", Flag::File},               {"f", Flag::File},
+            {"default-priority", Flag::DefaultPriority}, {"dp", Flag::DefaultPriority}
     };
 
     if (const auto it = flag_map.find(flag_str); it != flag_map.end())
@@ -1323,6 +1323,8 @@ void Manager::Help()
     std::cout << "     --remove [TAG]                       - Remove a tag from a task (Used with `tag --id`)\n";
     std::cout << "     --list                               - List all available tags (Used with `tag` command)\n";
     std::cout << "     --file [filename]                    - Specify file name for `import` and `export`\n\n";
+
+    // Shortcuts
 
     // 💡 Examples
     std::cout << "💡 Examples:\n";
