@@ -5,24 +5,26 @@
 #include "taskpch.h"
 #include "Manager.h"
 
-#include <ranges>
-
 /* --------------------Consts-------------------- */
 
-static constexpr short int HISTORY_LIMIT = 50;
+using json = nlohmann::json;
 
-static const std::string PRIORITY_EXPECTED_VALUES = "`high`, `medium`, `low`, or `none`";
-static const std::string DUE_DATE_EXPECTED_FORMAT = "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`";
-static const std::string DUE_DATE_EXPECTED_DATE = "Real day in a calendar starting from (1900-01-01)";
+static constexpr size_t HISTORY_LIMIT = 50;
+static constexpr char TAG_DELIMITER = '|';
 
-static const std::string NO_CHANGE_SPECIFIED_ERROR = "❌ Error: No changes specified. Use other flags (e.g., --description, --priority, --due, --tags, --status) along with --id.\n";
+static constexpr std::array<int, 12> days_in_month = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+/* --------------------Constructor-------------------- */
+
+Manager::Manager()
+{
+    LoadConfig();
+}
 
 /* --------------------Getters-------------------- */
 
-inline Command Manager::GetCommand(std::string& command_str)
+inline Command Manager::GetCommand(const std::string& command_str)
 {
-    ToLower(command_str);
-
     static const std::unordered_map<std::string, Command> command_map {
         {"add", Command::Add},
         {"list", Command::List},
@@ -34,6 +36,9 @@ inline Command Manager::GetCommand(std::string& command_str)
         {"sort", Command::Sort},
         {"tag", Command::Tag},
         {"undo", Command::Undo},
+        {"export", Command::Export},
+        {"import", Command::Import},
+        {"config", Command::Config},
         {"help", Command::Help},
         {"exit", Command::Exit}
     };
@@ -44,10 +49,8 @@ inline Command Manager::GetCommand(std::string& command_str)
     return Command::None;
 }
 
-inline Flag Manager::GetFlag(std::string& flag_str)
+inline Flag Manager::GetFlag(const std::string& flag_str)
 {
-    ToLower(flag_str);
-
     static const std::unordered_map<std::string, Flag> flag_map {
         {"description", Flag::Description},
         {"priority", Flag::Priority},
@@ -60,7 +63,9 @@ inline Flag Manager::GetFlag(std::string& flag_str)
         {"add", Flag::Add},
         {"remove", Flag::Remove},
         {"list", Flag::List},
-        {"status", Flag::Status}
+        {"status", Flag::Status},
+        {"file", Flag::File},
+        {"default-priority", Flag::DefaultPriority}
     };
 
     if (const auto it = flag_map.find(flag_str); it != flag_map.end())
@@ -69,10 +74,8 @@ inline Flag Manager::GetFlag(std::string& flag_str)
     return Flag::None;
 }
 
-inline Priority Manager::GetPriority(std::string& priority_str)
+inline Priority Manager::GetPriority(const std::string& priority_str)
 {
-    ToLower(priority_str);
-
     static const std::unordered_map<std::string, Priority> priority_map {
         {"high", Priority::High},
         {"medium", Priority::Medium},
@@ -86,10 +89,8 @@ inline Priority Manager::GetPriority(std::string& priority_str)
     return Priority::Invalid;
 }
 
-inline Status Manager::GetStatus(std::string& status_str)
+inline Status Manager::GetStatus(const std::string& status_str)
 {
-    ToLower(status_str);
-
     static const std::unordered_map<std::string, Status> status_map {
         {"completed", Status::Completed},
         {"pending", Status::Pending}
@@ -101,10 +102,8 @@ inline Status Manager::GetStatus(std::string& status_str)
     return Status::None;
 }
 
-inline Order Manager::GetOrder(std::string& order_str)
+inline Order Manager::GetOrder(const std::string& order_str)
 {
-    ToLower(order_str);
-
     static const std::unordered_map<std::string, Order> order_map {
             {"asc", Order::Ascending},
             {"desc", Order::Descending}
@@ -147,7 +146,9 @@ inline std::string Manager::GetFlagStr(const Flag &flag)
         {Flag::Add, "add"},
         {Flag::Remove, "remove"},
         {Flag::List, "list"},
-        {Flag::Status, "status"}
+        {Flag::Status, "status"},
+        {Flag::File, "file"},
+        {Flag::DefaultPriority, "default-priority"}
     };
 
     if (const auto it = flag_str_map.find(flag); it != flag_str_map.end())
@@ -157,6 +158,68 @@ inline std::string Manager::GetFlagStr(const Flag &flag)
 }
 
 /* --------------------Helpers-------------------- */
+
+DateValidationResult Manager::ValidateDateFormat(std::string &date)
+{
+    const std::regex date_format(R"(^(\d{4})([-/\.])(\d{1,2})\2(\d{1,2})$)");
+
+    std::smatch match;
+    if (!std::regex_match(date, match, date_format))
+        return DateValidationResult::InvalidFormat;
+
+    // Get year, month, day
+    const int year = std::stoi(match[1]);
+    const int month = std::stoi(match[3]);
+    const int day = std::stoi(match[4]);
+
+    // Year and month check
+    if (year < 1900 || month < 1 || month > 12)
+        return DateValidationResult::InvalidValue;
+
+    // Day check considering leap years
+    const bool is_leap_year = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    const int max_days = days_in_month[month - 1] + ((month == 2 && is_leap_year) ? 1 : 0);
+
+    if (day < 1 || day > max_days)
+        return DateValidationResult::InvalidValue;
+
+    date = std::format("{:04}-{:02}-{:02}", year, month, day);
+    return DateValidationResult::Success;
+}
+
+bool Manager::ValidateAddTags(const std::vector<std::string>& values, Task& task)
+{
+    std::unordered_set<std::string> unique_values;
+
+    for (auto &tag : values) {
+        if (tag.find(TAG_DELIMITER) != std::string::npos) {
+            std::cerr << "❌ Error: Tag '" << tag << "' contains the forbidden delimiter '" << TAG_DELIMITER;
+            return false;
+        }
+        unique_values.insert(tag);
+        m_tags.try_emplace(tag, 0).first->second++;
+    }
+
+    task.tags.assign(unique_values.begin(), unique_values.end());
+    return true;
+}
+
+bool Manager::ValidateEditTags(const std::vector<std::string>& values, const auto& it)
+{
+    std::unordered_set<std::string> unique_values;
+
+    for (auto &tag : values) {
+        if (tag.find(TAG_DELIMITER) != std::string::npos) {
+            std::cerr << "❌ Error: Tag '" << tag << "' contains the forbidden delimiter '" << TAG_DELIMITER;
+            return false;
+        }
+        unique_values.insert(tag);
+        m_tags.try_emplace(tag, 0).first->second++;
+    }
+
+    it->tags.assign(unique_values.begin(), unique_values.end());
+    return true;
+}
 
 inline void Manager::ToLower(std::string& str)
 {
@@ -180,37 +243,6 @@ inline void Manager::PrintExitMessage()
               << "  ✅ Thank you for using Task Manager CLI! \n"
               << "     Have a productive day! 🚀  \n"
               << "============================================\n\n";
-}
-
-DateValidationResult Manager::ValidateDateFormat(std::string &date)
-{
-    const std::regex date_format(R"(^(\d{4})([-/\.])(\d{1,2})\2(\d{1,2})$)");
-
-    std::smatch match;
-    if (!std::regex_match(date, match, date_format))
-        return DateValidationResult::InvalidFormat;
-
-    const int year = std::stoi(match[1]);
-    const int month = std::stoi(match[3]);
-    const int day = std::stoi(match[4]);
-
-    if (year < 1900 || month < 1 || month > 12)
-        return DateValidationResult::InvalidValue;
-
-    static constexpr std::array<int, 12> days_in_month = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    const bool is_leap_year = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-
-    const int max_days = days_in_month[month - 1] + ((month == 2 && is_leap_year) ? 1 : 0);
-    if (day < 1 || day > max_days)
-        return DateValidationResult::InvalidValue;
-
-    std::ostringstream normalized_date;
-    normalized_date << std::setfill('0') << std::setw(4) << year << "-"
-                                            << std::setw(2) << month << "-"
-                                            << std::setw(2) << day;
-
-    date = normalized_date.str();
-    return DateValidationResult::Success;
 }
 
 void Manager::SplitQuotedText(const std::string& input, std::vector<std::string>& output)
@@ -237,13 +269,15 @@ void Manager::SplitQuotedText(const std::string& input, std::vector<std::string>
     }
 }
 
-void Manager::SortIndirectly(const size_t argc, const std::vector<std::string> &argv)
+void Manager::SortIndirectly()
 {
     if (m_prev_sort.first != Flag::None) {
         m_flags[Flag::SortBy] = {GetFlagStr(m_prev_sort.first)};
         m_flags[Flag::SortOrder] = {(m_prev_sort.second == Order::Ascending ? "asc" : "desc")};
         Sort(false);
     }
+
+    m_in_order = true;
 }
 
 void Manager::ListIndirectly()
@@ -258,7 +292,7 @@ void Manager::ListIndirectly()
 
 void Manager::ListTags() const
 {
-if (m_tags.empty()) {
+    if (m_tags.empty()) {
         std::cout << "\n📭 No tags available.\n";
         return;
     }
@@ -309,44 +343,36 @@ bool Manager::AddFlagUpdate(const Flag& flag, std::vector<std::string>& values, 
     switch (flag) {
         case Flag::Description:
             task.description = values[0];
-        break;
+            return true;
 
         case Flag::Priority:
             task.priority = GetPriority(values[0]);
-        if (task.priority == Priority::Invalid) {
-            PrintInvalidValuesError("priority", values[0], PRIORITY_EXPECTED_VALUES);
-            return false;
-        }
-        break;
+            if (task.priority == Priority::Invalid) {
+                PrintInvalidValuesError("priority", values[0], "`high`, `medium`, `low`, or `none`");
+                return false;
+            }
+            return true;
 
         case Flag::Due:
             switch (ValidateDateFormat(values[0])) {
                 case DateValidationResult::InvalidFormat:
-                    PrintInvalidValuesError("due", values[0], DUE_DATE_EXPECTED_FORMAT);
+                    PrintInvalidValuesError("due", values[0], "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`");
                     return false;
                 case DateValidationResult::InvalidValue:
-                    PrintInvalidValuesError("due", values[0], DUE_DATE_EXPECTED_DATE);
+                    PrintInvalidValuesError("due", values[0], "Real day in a calendar starting from (1900-01-01)");
                     return false;
                 default:
                     task.due = values[0];
-                break;
+                    return true;
             }
-
-        break;
 
         case Flag::Tags:
-            for (auto &tag : values) {
-                m_tags.try_emplace(tag, 0).first->second++;
-            }
-        task.tags = values;
-        break;
+            return ValidateAddTags(values, task);
 
         default:
             PrintInvalidFlagsError("add", {"description", "priority", "due", "tags"});
             return false;
     }
-
-    return true;
 }
 
 bool Manager::EditFlagUpdate(const Flag& flag, std::vector<std::string>& values, const auto& it)
@@ -356,27 +382,27 @@ bool Manager::EditFlagUpdate(const Flag& flag, std::vector<std::string>& values,
     switch (flag) {
         case Flag::Description:
             it->description = values[0];
-            break;
+            return true;
 
         case Flag::Priority:
             it->priority = GetPriority(values[0]);
             if (it->priority == Priority::Invalid) {
-                PrintInvalidValuesError("priority", values[0], PRIORITY_EXPECTED_VALUES);
+                PrintInvalidValuesError("priority", values[0], "`high`, `medium`, `low`, or `none`");
                 return false;
             }
-            break;
+            return true;
 
         case Flag::Due:
             switch (ValidateDateFormat(values[0])) {
                 case DateValidationResult::InvalidFormat:
-                    PrintInvalidValuesError("due", values[0], DUE_DATE_EXPECTED_FORMAT);
+                    PrintInvalidValuesError("due", values[0], "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`");
                     return false;
                 case DateValidationResult::InvalidValue:
-                    PrintInvalidValuesError("due", values[0], DUE_DATE_EXPECTED_DATE);
+                    PrintInvalidValuesError("due", values[0], "Real day in a calendar starting from (1900-01-01)");
                     return false;
                 default:
                     it->due = values[0];
-                    break;
+                    return true;
             }
 
         case Flag::Tags:
@@ -385,11 +411,7 @@ bool Manager::EditFlagUpdate(const Flag& flag, std::vector<std::string>& values,
                     m_tags.erase(tag);
                 }
             }
-            for (auto &tag : values) {
-                m_tags.try_emplace(tag, 0).first->second++;
-            }
-            it->tags = values;
-            break;
+            return ValidateEditTags(values, it);
 
         case Flag::Status:
             it->status = GetStatus(values[0]);
@@ -398,29 +420,47 @@ bool Manager::EditFlagUpdate(const Flag& flag, std::vector<std::string>& values,
                     "`pending`, `completed`");
                 return false;
             }
-            break;
+            return true;
 
         default:
             PrintInvalidFlagsError("edit", {"description", "priority", "due", "tags", "status"});
             return false;
     }
-
-    return true;
 }
 
 void Manager::AddToHistory()
 {
-    if (history.size() >= HISTORY_LIMIT) {
-        history.pop_front();
-    }
+    // Push to history
+    if (history.size() >= HISTORY_LIMIT) { history.pop_front(); }
+    history.emplace_back(m_tasks);
+}
 
-    history.push_back(m_tasks);
+void Manager::LoadConfig()
+{
+    std::ifstream file("config.json");
+
+    if (file) {
+        file >> config;
+        std::string default_priority = config["default_priority"];
+        ToLower(default_priority);
+        config["default_priority"] = default_priority;
+    } else {
+        config["default_priority"] = "none";
+        SaveConfig();
+    }
+}
+
+void Manager::SaveConfig() const
+{
+    std::ofstream file("config.json");
+    file << config.dump(4);
 }
 
 /* --------------------Main Functionality-------------------- */
 
-void Manager::Add(const size_t argc, const std::vector<std::string>& argv)
+void Manager::Add()
 {
+    // Required Tags
     if (!FlagUsed(Flag::Description)) {
         PrintArgumentError("--description", "is required for this command.");
         return;
@@ -428,24 +468,30 @@ void Manager::Add(const size_t argc, const std::vector<std::string>& argv)
 
     Task task;
 
+    // Default Priority
+    task.priority = GetPriority(config["default_priority"]);
+
+    // Update the other flags
     for (auto &[flag, values] : m_flags) {
         if (!AddFlagUpdate(flag, values, task)) {
             return;
         }
     }
 
+    // Give ID
     task.id = m_prev_id++;
 
+    // Add the task
     m_tasks.push_back(task);
 
-    SortIndirectly(argc, argv);
-
+    m_in_order = false;
     std::cout << "📌 Task added successfully! (ID: " << task.id << ")\n";
 
+    // Add to history for undo
     AddToHistory();
 }
 
-void Manager::List(const bool called_directly) const
+void Manager::List(const bool called_directly)
 {
     if (!m_flags.empty() && called_directly) {
         PrintArgumentError("no flags", "are allowed for this command.");
@@ -456,6 +502,8 @@ void Manager::List(const bool called_directly) const
         std::cout << "\n📭 No tasks available.\n";
         return;
     }
+
+    if (!m_in_order) SortIndirectly();
 
     // **Step 1: Compute Column Widths Dynamically**
     size_t id_width = 4;
@@ -537,15 +585,17 @@ void Manager::List(const bool called_directly) const
     std::cout << std::setfill('-') << std::setw(static_cast<int>(total_width)) << "" << std::setfill(' ') << "\n";
 }
 
-void Manager::Edit(const size_t argc, const std::vector<std::string>& argv)
+void Manager::Edit()
 {
+    // Required flags
     if (!FlagUsed(Flag::ID)) {
         PrintArgumentError("--id", "is required for this command.");
         return;
     }
 
+    // No changes specified
     if (m_flags.size() == 1) {
-        std::cout << NO_CHANGE_SPECIFIED_ERROR;
+        std::cout << "❌ Error: No changes specified. Use other flags (e.g., --description, --priority, --due, --tags, --status) along with --id.\n";
         return;
     }
 
@@ -570,8 +620,7 @@ void Manager::Edit(const size_t argc, const std::vector<std::string>& argv)
             }
         }
 
-        SortIndirectly(argc, argv);
-
+        m_in_order = false;
         std::cout << "✏️  Task (ID: " << it->id << ") updated successfully!\n";
 
         AddToHistory();
@@ -582,11 +631,13 @@ void Manager::Edit(const size_t argc, const std::vector<std::string>& argv)
 
 void Manager::Delete()
 {
+    // Required flags
     if (!FlagUsed(Flag::ID)) {
         PrintArgumentError("--id", "is required for this command.");
         return;
     }
 
+    // Wrong flags
     if (m_flags.size() > 1) {
         PrintInvalidFlagsError("delete", {"id"});
         return;
@@ -620,11 +671,13 @@ void Manager::Delete()
 
 void Manager::Complete()
 {
+    // Required flags
     if (!FlagUsed(Flag::ID)) {
         PrintArgumentError("--id", "is required for this command.");
         return;
     }
 
+    // Wrong flags
     if (m_flags.size() > 1) {
         PrintInvalidFlagsError("complete", {"id"});
         return;
@@ -664,6 +717,8 @@ void Manager::Search()
         return PrintInvalidFlagsError("search", {"description", "tags"});
     }
 
+    std::ranges::for_each(m_tasks, [](Task& task) { task.hidden = true; });
+
     if (description_present) {
         std::vector<std::string> keywords;
         SplitQuotedText(m_flags[Flag::Description][0], keywords);
@@ -677,7 +732,8 @@ void Manager::Search()
                     return description.find(keyword) != std::string::npos;
                 });
 
-            task.hidden = !has_any_occurrences;
+            if (has_any_occurrences)
+                task.hidden = false;
         }
     }
 
@@ -693,7 +749,8 @@ void Manager::Search()
                         }) != task.tags.end();
                 });
 
-            task.hidden &= !has_any_tag;
+            if (has_any_tag)
+                task.hidden = false;
         }
     }
 
@@ -732,7 +789,7 @@ void Manager::Filter()
     else if (priority_present) {
         const Priority filter_priority = GetPriority(m_flags[Flag::Priority][0]);
         if (filter_priority == Priority::Invalid) {
-            PrintInvalidValuesError("priority", m_flags[Flag::Priority][0], PRIORITY_EXPECTED_VALUES);
+            PrintInvalidValuesError("priority", m_flags[Flag::Priority][0], "`high`, `medium`, `low`, or `none`");
             return;
         }
 
@@ -740,26 +797,26 @@ void Manager::Filter()
             task.hidden = (task.priority != filter_priority);
         });
     } else {
-        std::string start_date;
-        std::string end_date;
-        if (due_present && !to_present) {
+        std::string start_date = "1900-01-01";
+        std::string end_date = "9999-12-31";
+        if (due_present) {
             start_date = m_flags[Flag::Due][0];
-            end_date = "9999-12-31";
-        } else if (!due_present && to_present) {
-            start_date = "1900-01-01";
+        }
+
+        if (to_present) {
             end_date = m_flags[Flag::To][0];
         }
 
         const auto due_result = ValidateDateFormat(start_date);
         if (due_result != DateValidationResult::Success) {
             return PrintInvalidValuesError("due", start_date,
-                due_result == DateValidationResult::InvalidFormat ? DUE_DATE_EXPECTED_FORMAT : DUE_DATE_EXPECTED_DATE);
+                due_result == DateValidationResult::InvalidFormat ? "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`" : "Real day in a calendar starting from (1900-01-01)");
         }
 
         const auto to_result = ValidateDateFormat(end_date);
         if (to_result != DateValidationResult::Success) {
             return PrintInvalidValuesError("to", end_date,
-                to_result == DateValidationResult::InvalidFormat ? DUE_DATE_EXPECTED_FORMAT : DUE_DATE_EXPECTED_DATE);
+                to_result == DateValidationResult::InvalidFormat ? "Format: `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD`" : "Real day in a calendar starting from (1900-01-01)");
         }
 
         if (start_date > end_date) {
@@ -833,6 +890,7 @@ void Manager::Sort(const bool called_directly)
         m_prev_sort = std::make_pair(sort_by, order);
 
         if (called_directly) {
+            m_in_order = true;
             std::cout << "🔹 Tasks sorted by `" << m_flags[Flag::SortBy][0] << "` in `" << (order == Order::Ascending ? "ascending" : "descending") << "` order.\n";
 
             AddToHistory();
@@ -894,6 +952,10 @@ void Manager::Tag()
 
         if (add_used) {
             if (std::ranges::find(it->tags, tag) == it->tags.end()) {
+                if (tag.find(TAG_DELIMITER) != std::string::npos) {
+                    std::cerr << "❌ Error: Tag '" << tag << "' contains the forbidden delimiter '" << TAG_DELIMITER << "\n";
+                    return;
+                }
                 it->tags.push_back(tag);
                 m_tags.try_emplace(tag, 0).first->second++;
                 std::cout << "✅ Tag `" << tag << "` added to Task ID: " << id << "\n";
@@ -939,23 +1001,290 @@ void Manager::Undo()
     m_tasks = history.back();
 }
 
+void Manager::Export()
+{
+    if (!FlagUsed(Flag::File)) {
+        PrintArgumentError("--file", "is required for this command.");
+        return;
+    }
+
+    if (m_flags.size() > 1) {
+        PrintInvalidFlagsError("export", {"file"});
+        return;
+    }
+
+    std::string file_path = m_flags[Flag::File][0];
+
+    std::string filename = std::filesystem::path(file_path).stem().string();
+
+    if (filename.find_first_of(R"(/:*?"<>|)") != std::string::npos) {
+        PrintInvalidValuesError("file", filename, "Cannot contain invalid characters.");
+        return;
+    }
+
+    if (filename.empty()) {
+        PrintInvalidValuesError("file", filename, "Valid file name required.");
+        return;
+    }
+
+    std::string file_format = std::filesystem::path(file_path).extension().string();
+
+    if (file_format == ".csv") file_format = "csv";
+    else if (file_format == ".json") file_format = "json";
+    else if (file_format == ".txt") file_format = "txt";
+    else {
+        PrintInvalidValuesError("file", file_format, "csv/txt/json");
+        return;
+    }
+
+    std::ofstream file(file_path, std::ios::out);
+    if (!file) {
+        std::cerr << "❌ Error: Unable to open file for writing!" << std::endl;
+        return;
+    }
+
+    if (file_format == "csv" || file_format == "txt") {
+        for (const auto& task : m_tasks) {
+            file << task.id << ",";
+            file << "\"" << task.description << "\"" << ",";
+            file << task.due << ",";
+            file << GetPriorityStr(task.priority) << ",";
+            file << (task.status == Status::Pending ? "Pending," : "Completed,");
+            file << "\"";
+            for (size_t i = 0; i < task.tags.size(); i++) {
+                file << task.tags[i];
+                if (i < task.tags.size() - 1) file << TAG_DELIMITER;
+            }
+            file << "\"";
+            file << std::endl;
+        }
+    } else {
+        json json_array = json::array();
+
+        for (const auto& task : m_tasks) {
+            json task_json = {
+                {"id", task.id},
+                {"description", task.description},
+                {"due", task.due},
+                {"priority", task.priority},
+                {"status", task.status},
+                {"tags", task.tags}  // JSON automatically converts vector<string> to array
+            };
+
+            json_array.push_back(task_json);
+        }
+
+        file << json_array.dump(4);
+    }
+
+    file.close();
+
+    std::cout << "✅ Data successfully written to " << file_path << "!" << std::endl;
+}
+
+void Manager::Import()
+{
+    if (!FlagUsed(Flag::File)) {
+        PrintArgumentError("--file", "is required for this command.");
+        return;
+    }
+
+    if (m_flags.size() > 1) {
+        PrintInvalidFlagsError("import", {"file"});
+        return;
+    }
+
+    std::string file_path = m_flags[Flag::File][0];
+
+    if (!std::filesystem::exists(file_path)) {
+        std::cerr << "❌ Error: File does not exist!" << std::endl;
+        return;
+    }
+
+    std::string file_format = std::filesystem::path(file_path).extension().string();
+
+    if (file_format == ".csv") file_format = "csv";
+    else if (file_format == ".json") file_format = "json";
+    else if (file_format == ".txt") file_format = "txt";
+    else {
+        PrintInvalidValuesError("file", file_format, "csv/txt/json");
+        return;
+    }
+
+    std::ifstream file(file_path);
+    if (!file) {
+        std::cerr << "❌ Error: Unable to open file for reading!" << std::endl;
+        return;
+    }
+
+    std::vector<Task> imported_tasks;
+    std::unordered_set<unsigned short> existing_ids;
+    for (const auto& task : m_tasks) existing_ids.insert(task.id);
+
+    if (file_format == "csv" || file_format == "txt") {
+        std::string line;
+        while (std::getline(file, line)) {
+            std::istringstream ss(line);
+            std::string field;
+            Task task;
+
+            if (!std::getline(ss, field, ',')) continue;
+            try {
+                task.id = static_cast<unsigned short>(std::stoi(field));
+                if (existing_ids.contains(task.id)) continue;
+            } catch (...) {
+                std::cerr << "⚠️ Skipping invalid task ID: " << field << "\n";
+                continue;
+            }
+
+            if (!std::getline(ss, field, '"')) continue;
+            if (!std::getline(ss, field, '"')) continue;
+            task.description = field;
+
+            if (!std::getline(ss, field, ',')) continue;
+            if (!std::getline(ss, field, ',')) continue;
+            if (ValidateDateFormat(field) != DateValidationResult::Success && !field.empty()) {
+                std::cerr << "⚠️ Skipping task with invalid due date: " << field << "\n";
+                continue;
+            }
+            task.due = field;
+
+            if (!std::getline(ss, field, ',')) continue;
+            task.priority = GetPriority(field);
+            if (task.priority == Priority::Invalid) {
+                std::cerr << "⚠️ Skipping task with invalid priority: " << field << "\n";
+                continue;
+            }
+
+            if (!std::getline(ss, field, ',')) continue;
+            if (field == "Pending") {
+                task.status = Status::Pending;
+            } else if (field == "Completed") {
+                task.status = Status::Completed;
+            } else {
+                std::cerr << "⚠️ Skipping task with invalid status: " << field << "\n";
+                continue;
+            }
+
+            if (!std::getline(ss, field, ',')) continue;
+            field = field.substr(1, field.size() - 2); // Remove quotes
+            std::istringstream tagStream(field);
+            std::string tag;
+
+            std::unordered_set<std::string> unique_values;
+            while (std::getline(tagStream, tag, TAG_DELIMITER)) {
+                unique_values.insert(tag);
+            }
+
+            task.tags.assign(unique_values.begin(), unique_values.end());
+            imported_tasks.push_back(task);
+            existing_ids.insert(task.id);
+        }
+    }
+    else {
+        json json_array;
+        file >> json_array;
+
+        for (const auto& task_json : json_array) {
+            Task task;
+            try {
+                task.id = task_json["id"];
+                if (existing_ids.contains(task.id)) continue;
+            } catch (...) {
+                std::cerr << "⚠️ Skipping invalid task ID in JSON.\n";
+                continue;
+            }
+
+            task.description = task_json["description"];
+            task.due = task_json["due"];
+
+            if (!task.due.empty() && ValidateDateFormat(task.due) != DateValidationResult::Success) {
+                std::cerr << "⚠️ Skipping task with invalid due date in JSON.\n";
+                continue;
+            }
+
+            try {
+                task.priority = static_cast<Priority>(task_json["priority"]);
+            } catch (...) {
+                std::cerr << "⚠️ Skipping task with invalid priority in JSON.\n";
+            }
+
+            if (task.priority == Priority::Invalid) {
+                std::cerr << "⚠️ Skipping task with invalid priority in JSON.\n";
+                continue;
+            }
+
+            try {
+                task.status = static_cast<Status>(task_json["status"]);
+            } catch (...) {
+                std::cerr << "⚠️ Skipping task with invalid status in JSON.\n";
+            }
+
+            if (task.status == Status::None) {
+                std::cerr << "⚠️ Skipping task with invalid status in JSON.\n";
+                continue;
+            }
+
+            task.tags = task_json["tags"].get<std::vector<std::string>>();
+
+            imported_tasks.push_back(task);
+            existing_ids.insert(task.id);
+        }
+    }
+
+    file.close();
+
+    m_tasks.insert(m_tasks.end(), imported_tasks.begin(), imported_tasks.end());
+
+    if (!imported_tasks.empty()) {
+        unsigned short max_imported_id = std::ranges::max(imported_tasks, {}, &Task::id).id;
+        m_prev_id = std::max(m_prev_id, static_cast<unsigned short>(max_imported_id + 1));
+    }
+
+    SortIndirectly();
+    std::cout << "✅ Successfully imported " << imported_tasks.size() << " tasks from " << file_path << "!\n";
+}
+
+void Manager::Config()
+{
+    if (m_flags.size() != 1) {
+        PrintArgumentError("config", "requires exactly one setting and its value.");
+        return;
+    }
+
+    if (FlagUsed(Flag::DefaultPriority)) {
+        std::string priority = m_flags[Flag::DefaultPriority][0];
+        if (GetPriority(priority) == Priority::Invalid) {
+            PrintInvalidValuesError("default-priority", priority, "`high`, `medium`, `low`, or `none`");
+            return;
+        }
+        config["default_priority"] = priority;
+    } else {
+        PrintInvalidFlagsError("config", {"default-priority", "colors"});
+        return;
+    }
+
+    SaveConfig();
+    std::cout << "✅ Configuration updated successfully!\n";
+}
+
 void Manager::Help()
 {
-    std::cout << "\n📖 Task Manager CLI - Help Guide\n";
-    std::cout << "===========================================\n";
+    std::cout << "\n📖 Task Manager CLI - Comprehensive Help Guide\n";
+    std::cout << "=============================================\n";
 
     // 📌 Task Management Commands
     std::cout << "📌 Task Management Commands:\n";
     std::cout << "  ➕ `add`        - Add a new task (Requires: --description) [Optional: --priority, --due, --tags]\n";
+    std::cout << "  ✏️  `edit`       - Modify a task (Requires: --id) [Optional: --description, --priority, --due, --tags, --status]\n";
     std::cout << "  🗑  `delete`     - Remove a task (Requires: --id)\n";
-    std::cout << "  ✅ `complete`   - Mark a task as completed (Requires: --id)\n";
-    std::cout << "  ✏️  `edit`       - Modify a task (Requires: --id) [Optional: --description, --priority, --due, --tags, --status]\n\n";
+    std::cout << "  ✅ `complete`   - Mark a task as completed (Requires: --id)\n\n";
 
     // 📋 Viewing & Searching Commands
     std::cout << "📋 Viewing & Searching Commands:\n";
     std::cout << "  📋 `list`       - Show all tasks (No flags required)\n";
-    std::cout << "  🔍 `search`     - Find tasks (Requires: --description or --tags)\n";
-    std::cout << "  🔎 `filter`     - Filter tasks (Use one of: --status, --priority, --due & --to)\n";
+    std::cout << "  🔍 `search`     - Find tasks by description or tags (Requires: --description OR --tags)\n";
+    std::cout << "  🔎 `filter`     - Filter tasks by status, priority, or due date (Use one of: --status, --priority, --due & --to)\n";
     std::cout << "  🔀 `sort`       - Sort tasks (Requires: --by) [Optional: --order]\n\n";
 
     // 🏷️ Tag Management Commands
@@ -964,8 +1293,18 @@ void Manager::Help()
     std::cout << "  🏷️  `tag` --id N --add tag     - Add a tag to a task (Requires: --id & --add)\n";
     std::cout << "  🏷️  `tag` --id N --remove tag  - Remove a tag from a task (Requires: --id & --remove)\n\n";
 
-    // ⚙️ General Commands
-    std::cout << "⚙️ General Commands:\n";
+    // 🔄 Undo & File Commands
+    std::cout << "🔄 Undo & File Management:\n";
+    std::cout << "  🔄 `undo`       - Revert the last change (No flags required)\n";
+    std::cout << "  📂 `export`     - Save tasks to a file (Requires: --file)\n";
+    std::cout << "  📥 `import`     - Load tasks from a file (Requires: --file)\n\n";
+
+    // ⚙️ Configuration Commands
+    std::cout << "⚙️ Configuration:\n";
+    std::cout << "  ⚙️ `config --default-priority [high|medium|low|none]` - Set default priority for new tasks\n\n";
+
+    // 🆘 General Commands
+    std::cout << "🆘 General Commands:\n";
     std::cout << "  🆘 `help`       - Show this guide\n";
     std::cout << "  ❌ `exit`       - Exit the Task Manager\n\n";
 
@@ -978,30 +1317,35 @@ void Manager::Help()
     std::cout << "     --tags [tag1 tag2 ...]               - Tags for categorization (Optional for `add`, `edit`)\n";
     std::cout << "     --id [NUMBER]                        - Specify task ID (Required for `edit`, `delete`, `complete`, `tag`)\n";
     std::cout << "     --status [pending|completed]         - Change task status (For `edit`, `filter`)\n";
-    std::cout << "     --by [priority|due|id]               - Sorting criteria (Required for `sort`)\n";
+    std::cout << "     --by [priority|due|id|status]        - Sorting criteria (Required for `sort`)\n";
     std::cout << "     --order [asc|desc]                   - Sorting order (Default: asc)\n";
     std::cout << "     --add [TAG]                          - Add a tag to a task (Used with `tag --id`)\n";
     std::cout << "     --remove [TAG]                       - Remove a tag from a task (Used with `tag --id`)\n";
-    std::cout << "     --list                               - List all available tags (Used with `tag` command)\n\n";
+    std::cout << "     --list                               - List all available tags (Used with `tag` command)\n";
+    std::cout << "     --file [filename]                    - Specify file name for `import` and `export`\n\n";
 
     // 💡 Examples
     std::cout << "💡 Examples:\n";
     std::cout << "  ➕ Add a new task:\n";
-    std::cout << "     add --description \"Finish project\" --priority high --due 2025-02-10 --tags work urgent\n";
+    std::cout << "     tasks add --description \"Finish project\" --priority high --due 2025-02-10 --tags work urgent\n";
     std::cout << "  🗑  Delete a task:\n";
-    std::cout << "     delete --id 3\n";
+    std::cout << "     tasks delete --id 3\n";
     std::cout << "  ✅ Mark a task as completed:\n";
-    std::cout << "     complete --id 5\n";
+    std::cout << "     tasks complete --id 5\n";
     std::cout << "  🔍 Search tasks by tag:\n";
-    std::cout << "     search --tags important\n";
+    std::cout << "     tasks search --tags important\n";
     std::cout << "  🔀 Sort tasks by priority (descending):\n";
-    std::cout << "     sort --by priority --order desc\n";
+    std::cout << "     tasks sort --by priority --order desc\n";
     std::cout << "  🏷️  Add a tag to a task:\n";
-    std::cout << "     tag --id 3 --add important\n";
+    std::cout << "     tasks tag --id 3 --add important\n";
     std::cout << "  🏷️  Remove a tag from a task:\n";
-    std::cout << "     tag --id 3 --remove urgent\n";
+    std::cout << "     tasks tag --id 3 --remove urgent\n";
+    std::cout << "  📂 Export tasks to a file:\n";
+    std::cout << "     tasks export --file tasks.json\n";
+    std::cout << "  📥 Import tasks from a file:\n";
+    std::cout << "     tasks import --file tasks.csv\n";
     std::cout << "  🏷️  List all tags:\n";
-    std::cout << "     tag --list\n";
+    std::cout << "     tasks tag --list\n";
 
     std::cout << "\n✨ Enjoy using Task Manager CLI! 🚀\n";
 }
@@ -1011,6 +1355,7 @@ void Manager::Help()
 RunStatus Manager::HandleCommand(const size_t argc, const std::vector<std::string> &argv)
 {
     std::string command_str = argv[0];
+    ToLower(command_str);
     const Command command = GetCommand(command_str);
     if (command == Command::None) {
         PrintCommandNotFoundError(command_str);
@@ -1036,9 +1381,9 @@ RunStatus Manager::HandleCommand(const size_t argc, const std::vector<std::strin
 void Manager::ExecuteCommand(const Command &command, const size_t argc, const std::vector<std::string> &argv)
 {
     switch (command) {
-        case Command::Add:      Add(argc, argv);        break;
+        case Command::Add:      Add();                  break;
         case Command::List:     List();                 break;
-        case Command::Edit:     Edit(argc, argv);       break;
+        case Command::Edit:     Edit();                 break;
         case Command::Delete:   Delete();               break;
         case Command::Complete: Complete();             break;
         case Command::Search:   Search();               break;
@@ -1046,6 +1391,9 @@ void Manager::ExecuteCommand(const Command &command, const size_t argc, const st
         case Command::Sort:     Sort();                 break;
         case Command::Tag:      Tag();                  break;
         case Command::Undo:     Undo();                 break;
+        case Command::Export:   Export();               break;
+        case Command::Import:   Import();               break;
+        case Command::Config:   Config();               break;
         case Command::Help:     Help();                 break;
         default:                                        break;
     }
@@ -1065,6 +1413,7 @@ bool Manager::InitFlagMap(const size_t argc, const std::vector<std::string> &arg
             return false;
         }
 
+        ToLower(flag_str);
         Flag flag = GetFlag(flag_str);
         if (flag == Flag::None) {
             PrintArgumentError("--" + flag_str, "is not recognized.");
@@ -1083,6 +1432,11 @@ bool Manager::InitFlagMap(const size_t argc, const std::vector<std::string> &arg
         i++;
 
         std::vector<std::string>& values = m_flags[flag];
+        std::string arg = argv[i];
+
+        if (flag != Flag::Description)
+            ToLower(arg);
+
         while (i < argc && !IsFlag(argv[i])) {
             values.push_back(argv[i]);
             i++;

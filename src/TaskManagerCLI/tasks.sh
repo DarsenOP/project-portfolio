@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # Navigate to the root of the project (relative path from tasks.sh to project root)
-cd "$(dirname "$0")"  # Navigate to where tasks.sh is located (TaskManagerCLI folder)
-cd ../..  # Go up to the project root
+cd ~/Documents/dev/project-portfolio/  # Go up to the project root
 
 # Create build directory if it doesn't exist
 mkdir -p build
@@ -15,4 +14,4 @@ cmake .. > /dev/null
 make > /dev/null
 
 # Run the 'tasks' executable (the symlink you created)
-../tasks "$@"  # Pass all arguments to the tasks executable
+~/Documents/dev/project-portfolio/src/TaskManagerCLI/tasks "$@"  # Pass all arguments to the tasks executable

@@ -21,6 +21,9 @@ enum class Command
     Sort,
     Tag,
     Undo,
+    Export,
+    Import,
+    Config,
     Help,
     Exit,
     None
@@ -41,6 +44,8 @@ enum class Flag
     Add,
     Remove,
     List,
+    File,
+    DefaultPriority,
     None
 };
 
@@ -89,7 +94,7 @@ enum class RunStatus
 struct Task
 {
     Task()
-        : id(0), priority(Priority::None), status(Status::Pending), due(), tags{}, hidden(false) {}
+        : id(0), description(), priority(Priority::None), status(Status::Pending), due(), tags{}, hidden(false) {}
 
     unsigned short int id;
     std::string description;

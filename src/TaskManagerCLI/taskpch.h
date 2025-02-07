@@ -6,6 +6,7 @@
 #define TASKPCH_H
 
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
@@ -16,8 +17,12 @@
 #include <regex>
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 #include <numeric>
 #include <cstdint>
 #include <iterator>
+#include <nlohmann/json.hpp>
+#include <charconv>
+#include <format>
 
 #endif //TASKPCH_H

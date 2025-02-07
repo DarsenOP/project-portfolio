@@ -19,8 +19,7 @@ int main(const int argc, const char *argv[])
 {
     /* Entry Point - Initializes Task Manager and Processes User Commands */
 
-    // TODO: Change the "./Documents/dev/project-portfolio/src/TaskManagerCLI/tasks.sh" with an appropriate name "tasks"
-    if (argc == 1 || (argc > 1 && static_cast<std::string>(argv[0]) == "tasks")) {
+    if (argc == 1 || (argc > 1 && static_cast<std::string>(argv[0]) == "/home/arsen/Documents/dev/project-portfolio/src/TaskManagerCLI/tasks")) {
         Manager manager;
 
         while (true) {

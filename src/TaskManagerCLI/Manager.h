@@ -6,12 +6,14 @@
 #define MANAGER_H
 
 #include <unordered_map>
+#include <nlohmann/json.hpp>
 
 #include "Tasks.h"
 
-class Manager final {
+class Manager final
+{
 public:
-    Manager() = default;
+    Manager();
     ~Manager() = default;
 
     /* Command Handling
@@ -35,11 +37,11 @@ private:
      * - GetStatus   -> Converts a string status into a `Status` enum.
      * - GetOrder    -> Converts a string order into an `Order` enum.
      */
-    static Command GetCommand(std::string &command_str);
-    static Flag GetFlag(std::string &flag_str);
-    static Priority GetPriority(std::string &priority_str);
-    static Status GetStatus(std::string &status_str);
-    static Order GetOrder(std::string &order_str);
+    static Command GetCommand(const std::string &command_str);
+    static Flag GetFlag(const std::string &flag_str);
+    static Priority GetPriority(const std::string &priority_str);
+    static Status GetStatus(const std::string &status_str);
+    static Order GetOrder(const std::string &order_str);
 
     /* Converter Methods:
      * ------------------------------------------------------------------------------
@@ -62,6 +64,9 @@ private:
      * - ListTags           -> Lists all the tags
      * - AddFlagUpdate      -> Updates the task when adding the task
      * - EditFlagUpdate     -> Updates the task when editing the task
+     * - AddToHistory       -> Function that adds the current state to the history for future undo
+     * - LoadConfig         -> Loads config setting from a file
+     * - SaveConfig         -> Writes the config setting to a file
      */
     bool FlagUsed(const Flag &flag) const;
     static bool IsFlag(const std::string &flag);
@@ -69,12 +74,16 @@ private:
     static DateValidationResult ValidateDateFormat(std::string &date);
     static void ToLower(std::string &str);
     static void SplitQuotedText(const std::string& input, std::vector<std::string>& output);
-    void SortIndirectly(size_t argc, const std::vector<std::string> &argv);
+    bool ValidateAddTags(const std::vector<std::string>& values, Task& task);
+    bool ValidateEditTags(const std::vector<std::string>& values, const auto& it);
+    void SortIndirectly();
     void ListIndirectly();
     void ListTags() const;
     bool AddFlagUpdate(const Flag& flag, std::vector<std::string>& values, Task& task);
     bool EditFlagUpdate(const Flag& flag, std::vector<std::string>& values, const auto& it);
     void AddToHistory();
+    void LoadConfig();
+    void SaveConfig() const;
 
     /* Error Handling Methods:
      * ------------------------------------------------------------------------------
@@ -101,11 +110,15 @@ private:
      * - Filter   -> Filters the tasks based on status, priority, or date
      * - Sort     -> Sort all the tasks based on id, date, priority, or status
      * - Tag      -> Can add, remove tags to certain tasks, or show all the available tags
+     * - Undo     -> Undoes the last action made
+     * - Export   -> Exports the tasks in a one of these formats: txt/csv/json
+     * - Imports  -> Imports the file containing the tasks
+     * - Config   -> Allows the user to change the default settings of the config
      * - Help     -> Displays available commands and usage information.
      */
-    void Add(size_t argc, const std::vector<std::string> &argv);
-    void List(bool called_directly=true) const;
-    void Edit(size_t argc, const std::vector<std::string> &argv);
+    void Add();
+    void List(bool called_directly=true);
+    void Edit();
     void Delete();
     void Complete();
     void Search();
@@ -113,6 +126,9 @@ private:
     void Sort(bool called_directly=true);
     void Tag();
     void Undo();
+    void Export();
+    void Import();
+    void Config();
     static void Help();
 
     /* Flag-Value Processing:
@@ -133,6 +149,7 @@ private:
      * - `m_prev_sort`      -> The previous sorting setting to make sure when new task added follow the same sorting
      * - `m_tags`           -> Stores all the tags used in the tasks
      * - `m_prev_states`    -> All previous states of the program for preforming `undo`
+     * - `config`           -> JSON of the config file
     */
     unsigned short int m_prev_id{1};
     unsigned short int m_hidden_count{};
@@ -141,6 +158,9 @@ private:
     std::vector<Task> m_tasks {};
     std::pair<Flag, Order> m_prev_sort {std::make_pair(Flag::None, Order::None)};
     std::deque<std::vector<Task>> history{m_tasks};
+    nlohmann::json config;
+
+    bool m_in_order {true};
 };
 
 

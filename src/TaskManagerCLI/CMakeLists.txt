@@ -12,3 +12,5 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Link any required external libraries (if applicable)
 # target_link_libraries(ProjectA some_library)
+find_package(nlohmann_json REQUIRED)
+target_link_libraries(TaskManagerCLI PRIVATE nlohmann_json::nlohmann_json)
