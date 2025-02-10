@@ -1,0 +1,3 @@
+[submodule "src/FileManagerCLI/external/spdlog"]
+	path = src/FileManagerCLI/external/spdlog
+	url = https://github.com/gabime/spdlog.git
