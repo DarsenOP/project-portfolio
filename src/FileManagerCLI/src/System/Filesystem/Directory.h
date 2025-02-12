@@ -8,7 +8,6 @@
 #include "FilesystemEntity.h"
 
 
-
 class Directory : public FilesystemEntity {
 public:
     Directory(const size_t id_p, std::string name_p, std::string path_p)
@@ -21,6 +20,7 @@ public:
     [[nodiscard]] inline size_t GetID() const override { return id; }
     [[nodiscard]] inline std::string GetName() const override { return name; }
     [[nodiscard]] inline std::string GetPath() const override { return path; }
+
 };
 
 

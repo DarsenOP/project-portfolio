@@ -8,10 +8,9 @@
 #include <memory>
 #include <vector>
 #include <string>
-
-#include "../Enumerators/CommandsEnum.h"
-#include "../System/SystemManagers/AccountManager.h"
-#include "../System/SystemManagers/FilesystemManager.h"
+#include "Enumerators/CommandsEnum.h"
+#include "System/SystemManagers/AccountManager.h"
+#include "System/SystemManagers/FilesystemManager.h"
 
 class Manager
 {
@@ -29,24 +28,21 @@ public:
     Manager(const Manager&) = delete;
     Manager& operator=(const Manager&) = delete;
 
-    /* Getters */
-    static Command GetCommand(const std::string& command_str);
-
-    /* Helpers */
-    static void ToLower(std::string& str);
-
+    /* Main Loop */
     void Start();
-    void HandleCommand(size_t argc, std::vector<std::string>& argv);
-    void ExecuteCommand(const Command& command, size_t command_index, size_t argc, std::vector<std::string>& argv);
+
+    /* Command Handling */
+    bool HandleCommand(size_t argc, std::vector<std::string>& argv);
+    bool ExecuteCommand(const Command& command, size_t command_index, size_t argc, std::vector<std::string>& argv) const;
 
     /* Sudo */
-    void Sudo(size_t argc, std::vector<std::string>& argv);
-
-    /* Helpers For Sudo */
-    [[nodiscard]] bool GiveCurrentUserRootPrivileges() const;
+    bool Sudo(size_t argc, std::vector<std::string>& argv);
+    [[nodiscard]] bool PromptForAdminPassword(bool give_sudo=true) const;
     void HandleSudoVFlag() const;
-    void HandleSudoUFlag(const std::string& username, size_t command_index, size_t argc, std::vector<std::string>& argv);
-    void SudoHelp() const;
+    void HandleSudoKFlag() const;
+    bool HandleSudoUFlag(const std::string& username, size_t command_index, size_t argc, std::vector<std::string>& argv);
+    void HandleSudoIFlag(const std::string& username) const;
+    static void SudoHelp();
 };
 
 #endif //MANAGER_H

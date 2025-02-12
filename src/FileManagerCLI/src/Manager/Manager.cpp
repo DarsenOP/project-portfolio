@@ -3,8 +3,9 @@
 //
 
 #include "Manager.h"
-#include "../Core/Core.h"
-#include "../CommandProcessor/CommandProcessor.h"
+#include "Util.h"
+#include "Core/Core.h"
+#include "CommandProcessor/CommandProcessor.h"
 
 Manager& Manager::GetInstance()
 {
@@ -30,7 +31,12 @@ void Manager::Start()
             std::vector<std::string> args = processor.GetResult();
             const size_t arg_count = processor.GetParsedResultWordCount();
 
-            HandleCommand(arg_count, args);
+            if (!HandleCommand(arg_count, args)) {
+                Log::LOG(LogLevel::INFO, "Thank you for using the File Manager. Goodbye!");
+                return;
+            } else {
+                account_manager->ListUsers();
+            }
         } else {
             const auto exception = processor.GetException();
 
@@ -43,122 +49,139 @@ void Manager::Start()
     }
 }
 
-void Manager::HandleCommand(const size_t argc, std::vector<std::string>& argv)
+/* Command Handling */
+
+bool Manager::HandleCommand(const size_t argc, std::vector<std::string>& argv)
 {
-    ToLower(argv[0]);
-    const Command first_command = GetCommand(argv[0]);
+    Util::ToLower(argv[0]);
+    const Command first_command = Util::GetCommand(argv[0]);
+
+    if (first_command == Command::none) {
+        Log::LOG(LogLevel::ERROR, "Command '"+argv[0]+"' not found. Please check the spelling or refer to the help section.");
+        return true;
+    }
 
     if (first_command == Command::sudo) {
         if (argc == 1) {
             SudoHelp();
-            return;
+            return true;
         }
 
-        Sudo(argc, argv);
+
+        return Sudo(argc, argv);
     } else {
-        ExecuteCommand(first_command, 0, argc, argv);
+        return ExecuteCommand(first_command, 0, argc, argv);
     }
 }
 
-void Manager::ExecuteCommand(const Command &command, const size_t command_index, const size_t argc, std::vector<std::string>& argv)
+bool Manager::ExecuteCommand(const Command &command, const size_t command_index, const size_t argc,
+                             std::vector<std::string>& argv) const
 {
+    switch (command) {
+        case Command::exit:
+            return false;
+        case Command::useradd:
+            if (account_manager->CurrenUserHasRootPrivileges())
+                account_manager->HandleUseradd(command_index, argc, argv);
+            else
+                Log::LOG(LogLevel::ERROR, "Insufficient privileges to create a new user. Please ensure you have admin access.");
+            return true;
+        case Command::passwd:
+            account_manager->HandlePasswd(command_index, argc, argv);
+        default:
+            return true;
+    }
 
-}
-
-
-/* Getters */
-
-Command Manager::GetCommand(const std::string &command_str)
-{
-    if (command_str == "sudo")      return Command::sudo;
-    if (command_str == "useradd")   return Command::useradd;
-    if (command_str == "passwd")    return Command::passwd;
-
-    return Command::none;
-}
-
-/* Helpers */
-
-void Manager::ToLower(std::string &str)
-{
-    std::ranges::transform(str.begin(), str.end(), str.begin(), ::tolower);
 }
 
 /* Sudo Handling */
 
-void Manager::Sudo(const size_t argc, std::vector<std::string> &argv)
+bool Manager::Sudo(const size_t argc, std::vector<std::string> &argv)
 {
     for (size_t i = 1; i < argc; i++) {
         if (argv[i][0] != '-') {
-            ToLower(argv[i]);
-            const Command command = GetCommand(argv[i]);
+            Util::ToLower(argv[i]);
+            const Command command = Util::GetCommand(argv[i]);
 
             if (command == Command::none) {
-                Log::LOG(LogLevel::ERROR, "Command not found");
-                return;
+                Log::LOG(LogLevel::ERROR, "Command '"+argv[i]+"' not found. Please check the spelling or refer to the help section.");
+                return true;
             }
 
-            HandleSudoVFlag();
+            std::string current_username = account_manager->GetCurrentUserName();
+            if (account_manager->SwitchUser("admin")) {
+                if (ExecuteCommand(command, i, argc, argv)) {
+                    account_manager->SwitchUser(current_username, true);
+                    return true;
+                }
+            }
 
-            ExecuteCommand(command, i, argc, argv);
         } else {
-            ToLower(argv[i]);
-            if (argv[i] == "-v") {
-                if (argc != 2) {
-                    std::cout << "Too many arguments.\n";
-                    return;
-                }
+            Util::ToLower(argv[i]);
+            const Flag sudo_flag = Util::GetSudoFlag(argv[i]);
 
-                HandleSudoVFlag();
+            switch (sudo_flag) {
+                case Flag::sudo_v:
+                    if (argc != 2) {
+                        Log::LOG(LogLevel::ERROR, "Invalid usage of '-v' flag. Correct usage: sudo -v");
+                        return true;
+                    }
+                    HandleSudoVFlag();
+                    return true;
 
-                return;
-            }
-            if (argv[i] == "-k") {
-                if (argc != 2) {
-                    std::cout << "Too many arguments.\n";
-                    return;
-                }
+                case Flag::sudo_k:
+                    if (argc != 2) {
+                        Log::LOG(LogLevel::ERROR, "Invalid usage of '-k' flag. Correct usage: sudo -k");
+                        return true;
+                    }
+                    HandleSudoKFlag();
+                    return true;
 
-                account_manager->SetCurrentUserPrivileges(false);
+                case Flag::sudo_u:
+                    if (i == argc - 1) {
+                        Log::LOG(LogLevel::ERROR, "Missing username after -u flag. Correct usage: sudo -u [username] [command]");
+                        return true;
+                    }
+                    if (i == argc - 2) {
+                        Log::LOG(LogLevel::ERROR, "Incorrect number of arguments for -u flag. Correct usage: sudo -u [username] [command] / sudo -u [username] -i");
+                        return true;
+                    }
+                    return HandleSudoUFlag(argv[i + 1], 3, argc, argv);
 
-                return;
-            }
-            if (argv[i] == "-h") {
-                if (argc != 2) {
-                    std::cout << "Too many arguments.\n";
-                    return;
-                }
+                case Flag::sudo_h:
+                    if (argc != 2) {
+                        Log::LOG(LogLevel::ERROR, "Invalid usage of '-h' flag. Correct usage: sudo -h");
+                        return true;
+                    }
+                    SudoHelp();
+                    return true;
 
-                SudoHelp();
+                case Flag::sudo_i:
+                    if (i != argc - 1) {
+                        Log::LOG(LogLevel::ERROR, "Invalid argument after '-i' flag. The 'sudo -i' command should not have additional arguments.");
+                        return false;
+                    }
+                    HandleSudoIFlag("admin");
+                    return true;
 
-                return;
-            }
-            if (argv[i] == "-u") {
-                if (i >= argc - 2) {
-                    std::cout << "Invalid number of arguments.\n";
-                    return;
-                }
-
-                const std::string& username = argv[i + 1];
-                HandleSudoUFlag(username, 3, argc, argv);
-
-                return;
-            } else {
-                std::cout << "invalid flag!\n";
+                default:
+                    Log::LOG(LogLevel::ERROR, "Flag '"+argv[i]+"' not found. Please check the spelling or refer to the help section.");
+                    return true;
             }
         }
     }
+
+    return true;
 }
 
-
-
-bool Manager::GiveCurrentUserRootPrivileges() const
+bool Manager::PromptForAdminPassword(const bool give_sudo) const
 {
     std::string password;
-    std::cout << "admin password: ";
+    std::cout << "[sudo] password for admin: ";
     getline(std::cin, password, '\n');
-    if (password == "admin") {
-        account_manager->SetCurrentUserPrivileges(true);
+
+    if (password == account_manager->GetAdminPassword()) {
+        account_manager->SetCurrentUserPrivileges(give_sudo);
         return true;
     }
 
@@ -168,33 +191,84 @@ bool Manager::GiveCurrentUserRootPrivileges() const
 void Manager::HandleSudoVFlag() const
 {
     if (!account_manager->CurrenUserHasRootPrivileges()) {
-        if (GiveCurrentUserRootPrivileges()) {
-            std::cout << "Admin privileges.\n";
+        if (PromptForAdminPassword()) {
+            Log::LOG(LogLevel::INFO, "Credentials validated. Admin access is now enabled.");
         } else {
-            std::cout << "Cannot get admin privileges.\n";
+            Log::LOG(LogLevel::ERROR, "Invalid credentials. Unable to verify admin privileges.");
+        }
+    } else {
+        Log::LOG(LogLevel::TRACE, "You already have admin privileges.");
+    }
+}
+
+void Manager::HandleSudoKFlag() const
+{
+    if (!account_manager->IsCurrentUserAnAdmin() && account_manager->CurrenUserHasRootPrivileges()) {
+        if (PromptForAdminPassword(false)) {
+            Log::LOG(LogLevel::INFO,"Cached credentials cleared. You will be prompted for authentication again the next time you use sudo.");
+        } else {
+            Log::LOG(LogLevel::ERROR, "Incorrect password. Admin privileges could not be revoked.");
+        }
+    } else if (!account_manager->IsCurrentUserAnAdmin()) {
+        Log::LOG(LogLevel::TRACE,"You do not have admin privileges to revoke.");
+    } else {
+        Log::LOG(LogLevel::TRACE,"You are the admin. You cannot revoke the privileges from yourself.");
+    }
+}
+
+bool Manager::HandleSudoUFlag(const std::string &username, const size_t command_index, size_t argc, std::vector<std::string>& argv)
+{
+    if (!account_manager->UserExists(username)) {
+        Log::LOG(LogLevel::ERROR, "Specified username does not exist. Please provide a valid username.");
+        return false;
+    }
+
+    Util::ToLower(argv[command_index]);
+    const Command command = Util::GetCommand(argv[command_index]);
+    if (command == Command::none) {
+
+        if (argv[command_index] == "-i") {
+            if (command_index != argc - 1) {
+                Log::LOG(LogLevel::ERROR, "Invalid argument after 'sudo -u <username> -i'. The 'sudo' command with '-u' and '-i' should not have additional arguments.");
+                return false;
+            }
+
+            HandleSudoIFlag(username);
+            return true;
+        }
+
+        Log::LOG(LogLevel::ERROR, "Command '"+argv[command_index]+"' not found. Please check the spelling or refer to the help section.");
+        return true;
+    }
+
+    std::string current_username = account_manager->GetCurrentUserName();
+    if (account_manager->SwitchUser(username)) {
+        if (ExecuteCommand(command, command_index, argc, argv)) {
+            account_manager->SwitchUser(current_username, true);
+            return true;
         }
     }
+
+    return false;
 }
 
-void Manager::HandleSudoUFlag(const std::string &username, const size_t command_index, size_t argc, std::vector<std::string>& argv)
+void Manager::HandleSudoIFlag(const std::string& username) const
 {
-    // If user doesnt exist
-
-    // If exists give the user privilege
-
-    const Command command = GetCommand(argv[command_index]);
-    if (command == Command::none) {
-        std::cout << "Invalid command.\n";
-        return;
-    }
-
-    ExecuteCommand(command, command_index, argc, argv);
-
-    // Take the privileges bacl
+    account_manager->SwitchUser(username);
 }
 
-
-void Manager::SudoHelp() const
+void Manager::SudoHelp()
 {
-    std::cout << "Help\n";
+    std::cout << "Usage: sudo [OPTION] COMMAND [ARGUMENTS...]\n\n";
+    std::cout << "Run a command as another user, typically with elevated privileges (root).\n\n";
+    std::cout << "Options:\n";
+    std::cout << std::left;
+    std::cout << std::setw(7) << "  -h" << std::setw(30) << "Display this help message and exit.\n";
+    std::cout << std::setw(7) << "  -v" << std::setw(30) << "Display the current user's cached credentials,\n";
+    std::cout << std::setw(7) << "    " << std::setw(30) << "and verify if they are still valid.\n";
+    std::cout << std::setw(7) << "  -k" << std::setw(30) << "Invalidates the user's cached credentials, forcing\n";
+    std::cout << std::setw(7) << "    " << std::setw(30) << "the user to authenticate again for the next sudo command.\n";
+    std::cout << std::setw(7) << "  -u" << std::setw(30) << "Run the specified COMMAND as the specified user\n";
+    std::cout << std::setw(7) << "    " << std::setw(30) << "(instead of root). You must be allowed to run the command\n";
+    std::cout << std::setw(7) << "    " << std::setw(30) << "as that user in the sudoers file.\n";
 }

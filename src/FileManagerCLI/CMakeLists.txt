@@ -40,6 +40,8 @@ set(SOURCES src/main.cpp
         src/System/Filesystem/File.cpp
         src/System/Filesystem/File.h
         src/Enumerators/CommandsEnum.h
+        src/Util.cpp
+        src/Util.h
 )
 add_executable(FileManagerCLI ${SOURCES})
 
@@ -49,3 +51,6 @@ target_precompile_headers(FileManagerCLI PRIVATE src/Core/filespch.h)
 # Link spdlog library
 add_subdirectory(external/spdlog)
 target_link_libraries(FileManagerCLI PRIVATE spdlog::spdlog)
+
+# Add include directories for header files
+target_include_directories(FileManagerCLI PRIVATE ${PROJECT_SOURCE_DIR}/src)
